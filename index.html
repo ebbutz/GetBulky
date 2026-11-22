@@ -74,6 +74,15 @@ svg{width:100%;height:auto;display:block}
     }
     return null;
   }
+  function rec(x) {
+    if (x.rounds && x.reps) return x.rounds + ' \u00d7 ' + x.reps;
+    if (x.rounds) return x.rounds + ' rounds';
+    if (x.reps) return x.reps + ' reps';
+    return '';
+  }
+  function exCard(e) {
+    return '<div class="card row"><div><b>' + esc(e.name) + '</b><div class="mute">' + (rec(e) ? 'Recommended ' + rec(e) + ' \u00b7 ' : '') + 'Break ' + mmss(e.rest) + '</div></div><button data-a="startRun" data-id="' + e.id + '">Start</button></div>';
+  }
   function setTxt(x) {
     var t = x.w + '\u00d7' + x.r;
     if (x.l == null) return t;
@@ -114,7 +123,7 @@ svg{width:100%;height:auto;display:block}
       '<button class="sec" data-a="finishSes">Finish</button></div></div>';
     if (run) {
       var prev = lastSets(run.eid, s), n = run.sets.length, last = n ? run.sets[n - 1] : (prev ? prev[0] : { w: '', r: '' });
-      h += '<div class="card"><div class="row"><b>' + esc(run.name) + '</b><span class="mute">Set ' + (n + 1) + '</span></div>' +
+      h += '<div class="card"><div class="row"><b>' + esc(run.name) + '</b><span class="mute">Set ' + (n + 1) + (run.rounds ? ' of ' + run.rounds : '') + '</span></div>' + (rec(run) ? '<div class="mute">Recommended ' + rec(run) + '</div>' : '') +
         (prev ? '<div class="mute">Last time: ' + esc(setsText(prev)) + '</div>' : '') +
         '<div class="timer" id="timer"></div><div class="mute" style="text-align:center" id="timerNote"></div>' +
         inputsHtml(run, last) +
@@ -126,13 +135,11 @@ svg{width:100%;height:auto;display:block}
       }
       h += '<button class="full" data-a="endRun">End exercise</button>';
     } else {
-      var tr = byId(db.tr, s.tid), ids = tr ? tr.ex.slice() : [];
-      for (i = 0; i < db.ex.length; i++) if (ids.indexOf(db.ex[i].id) < 0) ids.push(db.ex[i].id);
+      var tr = byId(db.tr, s.tid), ids = tr ? tr.ex : [], other = '', e;
       h += '<h2>Start an exercise</h2>';
-      for (i = 0; i < ids.length; i++) {
-        var e = byId(db.ex, ids[i]); if (!e) continue;
-        h += '<div class="card row"><div><b>' + esc(e.name) + '</b><div class="mute">Break ' + mmss(e.rest) + '</div></div><button data-a="startRun" data-id="' + e.id + '">Start</button></div>';
-      }
+      for (i = 0; i < ids.length; i++) { e = byId(db.ex, ids[i]); if (e) h += exCard(e); }
+      for (i = 0; i < db.ex.length; i++) if (ids.indexOf(db.ex[i].id) < 0) other += exCard(db.ex[i]);
+      if (other) h += '<details><summary class="mute" style="padding:8px 0">Other exercises</summary>' + other + '</details>';
       if (s.runs.length) {
         h += '<h2>Done so far</h2><div class="card">';
         for (i = 0; i < s.runs.length; i++) h += '<div><b>' + esc(s.runs[i].name) + '</b> <span class="mute">' + esc(setsText(s.runs[i].sets)) + '</span></div>';
@@ -189,11 +196,16 @@ svg{width:100%;height:auto;display:block}
 
   function setupView() {
     var h = '<h1>Setup</h1><h2>Exercise types</h2><div class="card">', i;
-    for (i = 0; i < db.ex.length; i++) h += '<div class="row" style="margin-bottom:8px"><span style="flex:1">' + esc(db.ex[i].name) + '</span>' +
-      '<input style="width:80px" type="number" inputmode="numeric" data-rest="' + db.ex[i].id + '" value="' + db.ex[i].rest + '"><span class="mute">sec</span>' +
-      '<label class="chk" style="margin:0 0 0 8px"><input type="checkbox" data-sides="' + db.ex[i].id + '"' + (db.ex[i].sides ? ' checked' : '') + '>L/R</label>' +
-      '<button class="del" data-a="delEx" data-id="' + db.ex[i].id + '">\u2715</button></div>';
-    h += '<label>New exercise</label><input id="nxName" placeholder="Name"><label>Break (seconds)</label><input id="nxRest" type="number" inputmode="numeric" value="90"><label class="chk"><input type="checkbox" id="nxSides">Track left and right separately</label>' +
+    for (i = 0; i < db.ex.length; i++) {
+      var x = db.ex[i];
+      h += '<div style="margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--line)"><div class="row"><b style="flex:1">' + esc(x.name) + '</b>' +
+        '<label class="chk" style="margin:0"><input type="checkbox" data-sides="' + x.id + '"' + (x.sides ? ' checked' : '') + '>L/R</label>' +
+        '<button class="del" data-a="delEx" data-id="' + x.id + '">\u2715</button></div>' +
+        '<div class="two" style="grid-template-columns:1fr 1fr 1fr"><div><label>Break (sec)</label><input type="number" inputmode="numeric" data-rest="' + x.id + '" value="' + x.rest + '"></div>' +
+        '<div><label>Rounds</label><input data-rounds="' + x.id + '" value="' + esc(x.rounds || '') + '" placeholder="3"></div>' +
+        '<div><label>Reps</label><input data-reps="' + x.id + '" value="' + esc(x.reps || '') + '" placeholder="8\u201312"></div></div></div>';
+    }
+    h += '<label>New exercise</label><input id="nxName" placeholder="Name"><label>Break (seconds)</label><input id="nxRest" type="number" inputmode="numeric" value="90"><div class="two"><div><label>Recommended rounds</label><input id="nxRounds" placeholder="3"></div><div><label>Recommended reps</label><input id="nxReps" placeholder="8\u201312"></div></div><label class="chk"><input type="checkbox" id="nxSides">Track left and right separately</label>' +
       '<button class="full" data-a="addEx">Add exercise</button></div><h2>Training types</h2><div class="card">';
     for (i = 0; i < db.tr.length; i++) h += '<div class="row" style="margin-bottom:8px"><div><b>' + esc(db.tr[i].name) + '</b><div class="mute">' +
       esc(db.tr[i].ex.map(function (id) { var e = byId(db.ex, id); return e ? e.name : '?'; }).join(', ')) + '</div></div><button class="del" data-a="delTr" data-id="' + db.tr[i].id + '">\u2715</button></div>';
@@ -230,7 +242,7 @@ svg{width:100%;height:auto;display:block}
       db.ses.push({ id: uid(), tid: tr.id, name: tr.name, start: isNaN(t) ? Date.now() : t, end: null, runs: [] });
     },
     finishSes: function () { if (!confirm('Finish this training?')) return false; var s = activeSes(); endRun(s); s.end = Date.now(); },
-    startRun: function (el) { var s = activeSes(), e = byId(db.ex, el.getAttribute('data-id')); endRun(s); s.runs.push({ id: uid(), eid: e.id, name: e.name, rest: e.rest, sides: !!e.sides, start: Date.now(), end: null, sets: [] }); },
+    startRun: function (el) { var s = activeSes(), e = byId(db.ex, el.getAttribute('data-id')); endRun(s); s.runs.push({ id: uid(), eid: e.id, name: e.name, rest: e.rest, sides: !!e.sides, rounds: e.rounds || '', reps: e.reps || '', start: Date.now(), end: null, sets: [] }); },
     endRun: function () { endRun(activeSes()); },
     logSet: function () {
       var run = activeRun(activeSes()), w = parseFloat($('w').value), r = parseInt($('r').value, 10), set;
@@ -247,7 +259,7 @@ svg{width:100%;height:auto;display:block}
     undoSet: function () { activeRun(activeSes()).sets.pop(); },
     addEx: function () {
       var n = $('nxName').value.replace(/^\s+|\s+$/g, ''), r = parseInt($('nxRest').value, 10);
-      if (!n) { alert('Enter a name.'); return false; } db.ex.push({ id: uid(), name: n, rest: isNaN(r) ? 90 : r, sides: $('nxSides').checked });
+      if (!n) { alert('Enter a name.'); return false; } db.ex.push({ id: uid(), name: n, rest: isNaN(r) ? 90 : r, sides: $('nxSides').checked, rounds: $('nxRounds').value.replace(/^\s+|\s+$/g, ''), reps: $('nxReps').value.replace(/^\s+|\s+$/g, '') });
     },
     delEx: function (el) { if (!confirm('Delete this exercise type? Past logs stay.')) return false; var id = el.getAttribute('data-id'); db.ex = db.ex.filter(function (e) { return e.id !== id; }); },
     addTr: function () {
@@ -271,6 +283,8 @@ svg{width:100%;height:auto;display:block}
   document.addEventListener('change', function (e) {
     var t = e.target, id = t.getAttribute && t.getAttribute('data-rest'), sd = t.getAttribute && t.getAttribute('data-sides');
     if (sd) { var ex2 = byId(db.ex, sd); if (ex2) { ex2.sides = t.checked; save(); } return; }
+    var rd = t.getAttribute && t.getAttribute('data-rounds'), rp = t.getAttribute && t.getAttribute('data-reps');
+    if (rd || rp) { var ex3 = byId(db.ex, rd || rp); if (ex3) { ex3[rd ? 'rounds' : 'reps'] = t.value.replace(/^\s+|\s+$/g, ''); save(); } return; }
     if (id) { var ex = byId(db.ex, id), v = parseInt(t.value, 10); if (ex && !isNaN(v)) { ex.rest = v; save(); } return; }
     if (t.id === 'pgEx') pg.ex = t.value; else if (t.id === 'pgRange') pg.range = t.value; else if (t.id === 'pgMetric') pg.metric = t.value; else return;
     render();
