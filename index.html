@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gym Log">
+<meta name="theme-color" content="#1d3557">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Gym Log</title>
+<style>
+:root{--ink:#1d2433;--bg:#eef1f5;--card:#fff;--line:#d5dbe4;--acc:#2455d6;--ok:#1f8a4c;--mute:#6b7585}
+@media (prefers-color-scheme:dark){:root{--ink:#e8ecf3;--bg:#12161f;--card:#1c222e;--line:#313a4b;--acc:#7da2ff;--ok:#4cc17f;--mute:#93a0b5}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,Helvetica,Arial,sans-serif}
+#app{padding:14px 14px 90px;max-width:560px;margin:0 auto}
+h1{font-size:22px;margin:4px 0 12px}h2{font-size:17px;margin:18px 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+label{display:block;font-size:13px;color:var(--mute);margin:8px 0 3px}
+input,select,textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+button{font:inherit;padding:11px 14px;border:0;border-radius:8px;background:var(--acc);color:#fff;font-weight:600}
+button.sec{background:transparent;color:var(--acc);border:1px solid var(--acc)}
+button.del{background:transparent;color:var(--mute);padding:6px 10px;border:0}
+button.full{width:100%;margin-top:10px}
+.row{display:flex;align-items:center;justify-content:space-between}
+.row>*+*{margin-left:8px}
+.two{display:grid;grid-template-columns:1fr 1fr;grid-gap:10px}
+.mute{color:var(--mute);font-size:14px}
+.timer{font-size:56px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;margin:4px 0}
+.timer.done{color:var(--ok)}
+.sets div{padding:6px 0;border-top:1px solid var(--line)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{padding:6px 4px;border-top:1px solid var(--line);text-align:left;vertical-align:top}
+#tabs{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0)}
+#tabs button{flex:1;background:transparent;color:var(--mute);border-radius:0;padding:14px 4px}
+#tabs button.on{color:var(--acc);box-shadow:inset 0 3px 0 var(--acc)}
+.chk{display:inline-block;margin:4px 12px 4px 0;font-size:15px;color:var(--ink)}
+.chk input{width:auto;margin-right:5px}
+svg{width:100%;height:auto;display:block}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="tabs"></div>
+<script>
+(function () {
+  var KEY = 'gymlog.v1', tab = 'train', db = load(), timerId = null;
+  var pg = { ex: 'all', metric: 'top', range: '5' };
+
+  function seed() {
+    return {
+      ex: [{ id: 'e1', name: 'Bench press', rest: 120 }, { id: 'e2', name: 'Overhead press', rest: 90 },
+        { id: 'e3', name: 'Squat', rest: 150 }, { id: 'e4', name: 'Barbell row', rest: 90 }, { id: 'e5', name: 'Bicep curl', rest: 60 }],
+      tr: [{ id: 't1', name: 'Push', ex: ['e1', 'e2'] }, { id: 't2', name: 'Legs', ex: ['e3'] }, { id: 't3', name: 'Pull', ex: ['e4', 'e5'] }],
+      ses: []
+    };
+  }
+  function load() { try { var s = localStorage.getItem(KEY); if (s) return JSON.parse(s); } catch (e) {} return seed(); }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { alert('Could not save data.'); } }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function byId(a, id) { for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; }
+  function fmtDate(t) { var d = new Date(t); return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+  function inputTime(t) { var d = new Date(t - new Date(t).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); }
+  function mmss(s) { var neg = s < 0; s = Math.abs(Math.round(s)); var r = s % 60; return (neg ? '+' : '') + Math.floor(s / 60) + ':' + (r < 10 ? '0' : '') + r; }
+  function activeSes() { for (var i = 0; i < db.ses.length; i++) if (!db.ses[i].end) return db.ses[i]; return null; }
+  function activeRun(s) { if (!s) return null; for (var i = 0; i < s.runs.length; i++) if (!s.runs[i].end) return s.runs[i]; return null; }
+  function endRun(s) { var r = activeRun(s); if (r) r.end = Date.now(); }
+  function lastSets(eid, skipSes) {
+    for (var i = db.ses.length - 1; i >= 0; i--) {
+      if (db.ses[i] === skipSes) continue;
+      for (var j = db.ses[i].runs.length - 1; j >= 0; j--) if (db.ses[i].runs[j].eid === eid && db.ses[i].runs[j].sets.length) return db.ses[i].runs[j].sets;
+    }
+    return null;
+  }
+  function setsText(sets) { return sets.map(function (x) { return x.w + '\u00d7' + x.r; }).join(', '); }
+
+  /* ---------- views ---------- */
+  function trainView() {
+    var s = activeSes(), h = '<h1>Train</h1>', i;
+    if (!s) {
+      if (!db.tr.length) return h + '<div class="card">Add a training type under Setup first.</div>';
+      h += '<div class="card"><label>Training</label><select id="trSel">';
+      for (i = 0; i < db.tr.length; i++) h += '<option value="' + db.tr[i].id + '">' + esc(db.tr[i].name) + '</option>';
+      h += '</select><label>Start date and time</label><input type="datetime-local" id="trStart" value="' + inputTime(Date.now()) + '">' +
+        '<button class="full" data-a="startSes">Start training</button></div>';
+      var done = db.ses.filter(function (x) { return x.end; }).slice(-3).reverse();
+      if (done.length) { h += '<h2>Recent</h2>'; for (i = 0; i < done.length; i++) h += '<div class="card"><b>' + esc(done[i].name) + '</b><div class="mute">' + fmtDate(done[i].start) + ' \u2013 ' + mmss((done[i].end - done[i].start) / 1000) + ' h:min</div></div>'; }
+      return h;
+    }
+    var run = activeRun(s);
+    h += '<div class="card"><div class="row"><div><b>' + esc(s.name) + '</b><div class="mute">Started ' + fmtDate(s.start) + '</div></div>' +
+      '<button class="sec" data-a="finishSes">Finish</button></div></div>';
+    if (run) {
+      var prev = lastSets(run.eid, s), n = run.sets.length, last = n ? run.sets[n - 1] : (prev ? prev[0] : { w: '', r: '' });
+      h += '<div class="card"><div class="row"><b>' + esc(run.name) + '</b><span class="mute">Set ' + (n + 1) + '</span></div>' +
+        (prev ? '<div class="mute">Last time: ' + esc(setsText(prev)) + '</div>' : '') +
+        '<div class="timer" id="timer"></div><div class="mute" style="text-align:center" id="timerNote"></div>' +
+        '<div class="two"><div><label>Weight (kg)</label><input id="w" type="number" inputmode="decimal" step="0.5" value="' + last.w + '"></div>' +
+        '<div><label>Reps</label><input id="r" type="number" inputmode="numeric" value="' + last.r + '"></div></div>' +
+        '<button class="full" data-a="logSet">Log set and start break</button></div>';
+      if (n) {
+        h += '<div class="card sets">';
+        for (i = 0; i < n; i++) h += '<div>Set ' + run.sets[i].n + ': ' + run.sets[i].w + ' kg \u00d7 ' + run.sets[i].r + '</div>';
+        h += '<button class="sec full" data-a="undoSet">Remove last set</button></div>';
+      }
+      h += '<button class="full" data-a="endRun">End exercise</button>';
+    } else {
+      var tr = byId(db.tr, s.tid), ids = tr ? tr.ex.slice() : [];
+      for (i = 0; i < db.ex.length; i++) if (ids.indexOf(db.ex[i].id) < 0) ids.push(db.ex[i].id);
+      h += '<h2>Start an exercise</h2>';
+      for (i = 0; i < ids.length; i++) {
+        var e = byId(db.ex, ids[i]); if (!e) continue;
+        h += '<div class="card row"><div><b>' + esc(e.name) + '</b><div class="mute">Break ' + mmss(e.rest) + '</div></div><button data-a="startRun" data-id="' + e.id + '">Start</button></div>';
+      }
+      if (s.runs.length) {
+        h += '<h2>Done so far</h2><div class="card">';
+        for (i = 0; i < s.runs.length; i++) h += '<div><b>' + esc(s.runs[i].name) + '</b> <span class="mute">' + esc(setsText(s.runs[i].sets)) + '</span></div>';
+        h += '</div>';
+      }
+    }
+    return h;
+  }
+
+  function entries(eid) {
+    var out = [], i, j, k;
+    for (i = 0; i < db.ses.length; i++) {
+      var s = db.ses[i], sets = [], names = {};
+      for (j = 0; j < s.runs.length; j++) {
+        if (eid !== 'all' && s.runs[j].eid !== eid) continue;
+        names[s.runs[j].name] = 1;
+        for (k = 0; k < s.runs[j].sets.length; k++) sets.push(s.runs[j].sets[k]);
+      }
+      if (!sets.length) continue;
+      var top = 0, vol = 0;
+      for (k = 0; k < sets.length; k++) { if (sets[k].w > top) top = sets[k].w; vol += sets[k].w * sets[k].r; }
+      out.push({ t: s.start, name: s.name, sets: sets, top: top, vol: Math.round(vol), n: Object.keys(names).length, dur: s.end ? (s.end - s.start) / 1000 : 0 });
+    }
+    return out;
+  }
+  function chart(list, key) {
+    if (list.length < 2) return '<div class="mute">Log at least two trainings to see a chart.</div>';
+    var W = 300, H = 120, p = 24, min = Infinity, max = -Infinity, i, pts = [], dots = '';
+    for (i = 0; i < list.length; i++) { if (list[i][key] < min) min = list[i][key]; if (list[i][key] > max) max = list[i][key]; }
+    if (max === min) { max += 1; min -= 1; }
+    for (i = 0; i < list.length; i++) {
+      var x = p + (W - 2 * p) * i / (list.length - 1), y = H - p - (H - 2 * p) * (list[i][key] - min) / (max - min);
+      pts.push(x.toFixed(1) + ',' + y.toFixed(1)); dots += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3" fill="var(--acc)"/>';
+    }
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '"><polyline fill="none" stroke="var(--acc)" stroke-width="2" points="' + pts.join(' ') + '"/>' + dots +
+      '<text x="2" y="' + (p + 4) + '" font-size="10" fill="var(--mute)">' + max + '</text><text x="2" y="' + (H - p + 4) + '" font-size="10" fill="var(--mute)">' + min + '</text></svg>';
+  }
+  function progressView() {
+    var h = '<h1>Progress</h1><div class="card"><label>Exercise</label><select id="pgEx"><option value="all">All exercises</option>', i;
+    for (i = 0; i < db.ex.length; i++) h += '<option value="' + db.ex[i].id + '"' + (pg.ex === db.ex[i].id ? ' selected' : '') + '>' + esc(db.ex[i].name) + '</option>';
+    h += '</select><div class="two"><div><label>Show</label><select id="pgRange"><option value="5"' + (pg.range === '5' ? ' selected' : '') + '>Last 5 trainings</option><option value="all"' + (pg.range === 'all' ? ' selected' : '') + '>Overall</option></select></div>' +
+      '<div><label>Chart</label><select id="pgMetric"><option value="top"' + (pg.metric === 'top' ? ' selected' : '') + '>Top weight (kg)</option><option value="vol"' + (pg.metric === 'vol' ? ' selected' : '') + '>Volume (kg\u00d7reps)</option></select></div></div></div>';
+    var all = entries(pg.ex), list = pg.range === '5' ? all.slice(-5) : all;
+    if (!list.length) return h + '<div class="card">No data yet. Finish a set in a training first.</div>';
+    h += '<div class="card">' + chart(list, pg.metric) + '</div><div class="card"><table><tr><th>Date</th><th>Sets</th><th>Top</th><th>Volume</th></tr>';
+    for (i = list.length - 1; i >= 0; i--) h += '<tr><td>' + new Date(list[i].t).toLocaleDateString() + '<div class="mute">' + esc(list[i].name) + '</div></td><td>' + esc(setsText(list[i].sets)) + '</td><td>' + list[i].top + '</td><td>' + list[i].vol + '</td></tr>';
+    h += '</table></div>';
+    if (pg.range === 'all') {
+      var f = list[0], l = list[list.length - 1];
+      h += '<div class="card">' + list.length + ' trainings. Top weight ' + f.top + ' \u2192 ' + l.top + ' kg, volume ' + f.vol + ' \u2192 ' + l.vol + '.</div>';
+    }
+    return h;
+  }
+
+  function setupView() {
+    var h = '<h1>Setup</h1><h2>Exercise types</h2><div class="card">', i;
+    for (i = 0; i < db.ex.length; i++) h += '<div class="row" style="margin-bottom:8px"><span style="flex:1">' + esc(db.ex[i].name) + '</span>' +
+      '<input style="width:80px" type="number" inputmode="numeric" data-rest="' + db.ex[i].id + '" value="' + db.ex[i].rest + '"><span class="mute">sec</span>' +
+      '<button class="del" data-a="delEx" data-id="' + db.ex[i].id + '">\u2715</button></div>';
+    h += '<label>New exercise</label><input id="nxName" placeholder="Name"><label>Break (seconds)</label><input id="nxRest" type="number" inputmode="numeric" value="90">' +
+      '<button class="full" data-a="addEx">Add exercise</button></div><h2>Training types</h2><div class="card">';
+    for (i = 0; i < db.tr.length; i++) h += '<div class="row" style="margin-bottom:8px"><div><b>' + esc(db.tr[i].name) + '</b><div class="mute">' +
+      esc(db.tr[i].ex.map(function (id) { var e = byId(db.ex, id); return e ? e.name : '?'; }).join(', ')) + '</div></div><button class="del" data-a="delTr" data-id="' + db.tr[i].id + '">\u2715</button></div>';
+    h += '<label>New training</label><input id="ntName" placeholder="Name">';
+    for (i = 0; i < db.ex.length; i++) h += '<label class="chk"><input type="checkbox" data-ntex="' + db.ex[i].id + '">' + esc(db.ex[i].name) + '</label>';
+    h += '<button class="full" data-a="addTr">Add training</button></div><h2>Backup</h2><div class="card"><div class="mute">Copy this text to keep a backup. Paste a backup here and tap Import to restore.</div>' +
+      '<textarea id="bk" rows="4">' + esc(JSON.stringify(db)) + '</textarea><button class="full sec" data-a="import">Import</button></div>';
+    return h;
+  }
+
+  /* ---------- render and timer ---------- */
+  function render() {
+    $('app').innerHTML = tab === 'train' ? trainView() : tab === 'progress' ? progressView() : setupView();
+    var t = [['train', 'Train'], ['progress', 'Progress'], ['setup', 'Setup']], h = '';
+    for (var i = 0; i < t.length; i++) h += '<button data-tab="' + t[i][0] + '"' + (tab === t[i][0] ? ' class="on"' : '') + '>' + t[i][1] + '</button>';
+    $('tabs').innerHTML = h;
+    tick();
+  }
+  function tick() {
+    var el = $('timer'); if (!el) return;
+    var run = activeRun(activeSes()); if (!run) return;
+    var n = run.sets.length, note = $('timerNote');
+    if (!n) { el.className = 'timer'; el.textContent = mmss(run.rest); note.textContent = 'Recommended break'; return; }
+    var left = run.rest - (Date.now() - run.sets[n - 1].t) / 1000;
+    el.textContent = mmss(left); el.className = 'timer' + (left <= 0 ? ' done' : '');
+    note.textContent = left <= 0 ? 'Break over \u2013 ready for the next set' : 'Break (recommended ' + mmss(run.rest) + ')';
+  }
+  setInterval(tick, 500);
+
+  /* ---------- actions ---------- */
+  var A = {
+    startSes: function () {
+      var tr = byId(db.tr, $('trSel').value), v = $('trStart').value, t = v ? new Date(v).getTime() : Date.now();
+      db.ses.push({ id: uid(), tid: tr.id, name: tr.name, start: isNaN(t) ? Date.now() : t, end: null, runs: [] });
+    },
+    finishSes: function () { if (!confirm('Finish this training?')) return false; var s = activeSes(); endRun(s); s.end = Date.now(); },
+    startRun: function (el) { var s = activeSes(), e = byId(db.ex, el.getAttribute('data-id')); endRun(s); s.runs.push({ id: uid(), eid: e.id, name: e.name, rest: e.rest, start: Date.now(), end: null, sets: [] }); },
+    endRun: function () { endRun(activeSes()); },
+    logSet: function () {
+      var w = parseFloat($('w').value), r = parseInt($('r').value, 10);
+      if (isNaN(w) || isNaN(r)) { alert('Enter weight and reps.'); return false; }
+      var run = activeRun(activeSes()); run.sets.push({ n: run.sets.length + 1, w: w, r: r, t: Date.now() });
+    },
+    undoSet: function () { activeRun(activeSes()).sets.pop(); },
+    addEx: function () {
+      var n = $('nxName').value.replace(/^\s+|\s+$/g, ''), r = parseInt($('nxRest').value, 10);
+      if (!n) { alert('Enter a name.'); return false; } db.ex.push({ id: uid(), name: n, rest: isNaN(r) ? 90 : r });
+    },
+    delEx: function (el) { if (!confirm('Delete this exercise type? Past logs stay.')) return false; var id = el.getAttribute('data-id'); db.ex = db.ex.filter(function (e) { return e.id !== id; }); },
+    addTr: function () {
+      var n = $('ntName').value.replace(/^\s+|\s+$/g, ''), ids = [], c = document.querySelectorAll('[data-ntex]');
+      if (!n) { alert('Enter a name.'); return false; }
+      for (var i = 0; i < c.length; i++) if (c[i].checked) ids.push(c[i].getAttribute('data-ntex'));
+      db.tr.push({ id: uid(), name: n, ex: ids });
+    },
+    delTr: function (el) { if (!confirm('Delete this training type? Past logs stay.')) return false; var id = el.getAttribute('data-id'); db.tr = db.tr.filter(function (t) { return t.id !== id; }); },
+    'import': function () {
+      try { var d = JSON.parse($('bk').value); if (!d.ex || !d.tr || !d.ses) throw 0; db = d; } catch (e) { alert('That is not a valid backup.'); return false; }
+    }
+  };
+  document.addEventListener('click', function (e) {
+    var el = e.target;
+    while (el && el !== document && !el.getAttribute('data-a') && !el.getAttribute('data-tab')) el = el.parentNode;
+    if (!el || el === document) return;
+    if (el.getAttribute('data-tab')) { tab = el.getAttribute('data-tab'); render(); return; }
+    if (A[el.getAttribute('data-a')](el) !== false) { save(); render(); }
+  });
+  document.addEventListener('change', function (e) {
+    var t = e.target, id = t.getAttribute && t.getAttribute('data-rest');
+    if (id) { var ex = byId(db.ex, id), v = parseInt(t.value, 10); if (ex && !isNaN(v)) { ex.rest = v; save(); } return; }
+    if (t.id === 'pgEx') pg.ex = t.value; else if (t.id === 'pgRange') pg.range = t.value; else if (t.id === 'pgMetric') pg.metric = t.value; else return;
+    render();
+  });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
+  render();
+})();
+</script>
+</body>
+</html>
