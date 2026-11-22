@@ -15,6 +15,8 @@ Open `index.html` in a browser, or run `python3 -m http.server` in this folder.
 3. Open `https://<your-user>.github.io/<repo>/` on your phone, then Share > Add to Home Screen
 
 ## Data model
-- `ex`: exercise types `{id, name, rest}` (rest = break in seconds)
+- `ex`: exercise types `{id, name, rest, sides}` (rest = break in seconds, sides = track left and right separately)
 - `tr`: training types `{id, name, ex: [exerciseIds]}`
-- `ses`: sessions `{start, end, runs: [{exercise, start, end, rest, sets: [{n, w, r, t}]}]}`
+- `ses`: sessions `{start, end, runs: [{exercise, start, end, rest, sets: [{n, w, r, l?, wl?, t}]}]}`
+
+For exercises with `sides`, `r` is reps on the right, `l` reps on the left, and `wl` the left weight if it differs from `w`.

@@ -74,7 +74,27 @@ svg{width:100%;height:auto;display:block}
     }
     return null;
   }
-  function setsText(sets) { return sets.map(function (x) { return x.w + '\u00d7' + x.r; }).join(', '); }
+  function setTxt(x) {
+    var t = x.w + '\u00d7' + x.r;
+    if (x.l == null) return t;
+    if (x.wl != null && x.wl !== x.w) return t + ' / ' + x.wl + '\u00d7' + x.l;
+    return t + '/' + x.l;
+  }
+  function setLong(x) {
+    var t = x.w + ' kg \u00d7 ' + x.r;
+    if (x.l == null) return t;
+    if (x.wl != null && x.wl !== x.w) return t + ' right, ' + x.wl + ' kg \u00d7 ' + x.l + ' left';
+    return t + ' right, ' + x.l + ' left';
+  }
+  function setsText(sets) { return sets.map(setTxt).join(', '); }
+  function inputsHtml(run, last) {
+    var wf = '<label>Weight (kg)</label><input id="w" type="number" inputmode="decimal" step="0.5" value="' + last.w + '">';
+    if (!run.sides) return '<div class="two"><div>' + wf + '</div><div><label>Reps</label><input id="r" type="number" inputmode="numeric" value="' + last.r + '"></div></div>';
+    var wl = (last.wl != null && last.wl !== last.w) ? last.wl : '';
+    return '<div class="two"><div>' + wf + '</div><div><label>Left weight, if different</label><input id="wl" type="number" inputmode="decimal" step="0.5" value="' + wl + '"></div>' +
+      '<div><label>Reps right</label><input id="r" type="number" inputmode="numeric" value="' + last.r + '"></div>' +
+      '<div><label>Reps left</label><input id="l" type="number" inputmode="numeric" value="' + (last.l == null ? last.r : last.l) + '"></div></div>';
+  }
 
   /* ---------- views ---------- */
   function trainView() {
@@ -97,12 +117,11 @@ svg{width:100%;height:auto;display:block}
       h += '<div class="card"><div class="row"><b>' + esc(run.name) + '</b><span class="mute">Set ' + (n + 1) + '</span></div>' +
         (prev ? '<div class="mute">Last time: ' + esc(setsText(prev)) + '</div>' : '') +
         '<div class="timer" id="timer"></div><div class="mute" style="text-align:center" id="timerNote"></div>' +
-        '<div class="two"><div><label>Weight (kg)</label><input id="w" type="number" inputmode="decimal" step="0.5" value="' + last.w + '"></div>' +
-        '<div><label>Reps</label><input id="r" type="number" inputmode="numeric" value="' + last.r + '"></div></div>' +
+        inputsHtml(run, last) +
         '<button class="full" data-a="logSet">Log set and start break</button></div>';
       if (n) {
         h += '<div class="card sets">';
-        for (i = 0; i < n; i++) h += '<div>Set ' + run.sets[i].n + ': ' + run.sets[i].w + ' kg \u00d7 ' + run.sets[i].r + '</div>';
+        for (i = 0; i < n; i++) h += '<div>Set ' + run.sets[i].n + ': ' + setLong(run.sets[i]) + '</div>';
         h += '<button class="sec full" data-a="undoSet">Remove last set</button></div>';
       }
       h += '<button class="full" data-a="endRun">End exercise</button>';
@@ -134,7 +153,7 @@ svg{width:100%;height:auto;display:block}
       }
       if (!sets.length) continue;
       var top = 0, vol = 0;
-      for (k = 0; k < sets.length; k++) { if (sets[k].w > top) top = sets[k].w; vol += sets[k].w * sets[k].r; }
+      for (k = 0; k < sets.length; k++) { var x = sets[k], xl = x.wl != null ? x.wl : x.w; if (x.w > top) top = x.w; if (x.l != null && xl > top) top = xl; vol += x.w * x.r + (x.l != null ? xl * x.l : 0); }
       out.push({ t: s.start, name: s.name, sets: sets, top: top, vol: Math.round(vol), n: Object.keys(names).length, dur: s.end ? (s.end - s.start) / 1000 : 0 });
     }
     return out;
@@ -172,8 +191,9 @@ svg{width:100%;height:auto;display:block}
     var h = '<h1>Setup</h1><h2>Exercise types</h2><div class="card">', i;
     for (i = 0; i < db.ex.length; i++) h += '<div class="row" style="margin-bottom:8px"><span style="flex:1">' + esc(db.ex[i].name) + '</span>' +
       '<input style="width:80px" type="number" inputmode="numeric" data-rest="' + db.ex[i].id + '" value="' + db.ex[i].rest + '"><span class="mute">sec</span>' +
+      '<label class="chk" style="margin:0 0 0 8px"><input type="checkbox" data-sides="' + db.ex[i].id + '"' + (db.ex[i].sides ? ' checked' : '') + '>L/R</label>' +
       '<button class="del" data-a="delEx" data-id="' + db.ex[i].id + '">\u2715</button></div>';
-    h += '<label>New exercise</label><input id="nxName" placeholder="Name"><label>Break (seconds)</label><input id="nxRest" type="number" inputmode="numeric" value="90">' +
+    h += '<label>New exercise</label><input id="nxName" placeholder="Name"><label>Break (seconds)</label><input id="nxRest" type="number" inputmode="numeric" value="90"><label class="chk"><input type="checkbox" id="nxSides">Track left and right separately</label>' +
       '<button class="full" data-a="addEx">Add exercise</button></div><h2>Training types</h2><div class="card">';
     for (i = 0; i < db.tr.length; i++) h += '<div class="row" style="margin-bottom:8px"><div><b>' + esc(db.tr[i].name) + '</b><div class="mute">' +
       esc(db.tr[i].ex.map(function (id) { var e = byId(db.ex, id); return e ? e.name : '?'; }).join(', ')) + '</div></div><button class="del" data-a="delTr" data-id="' + db.tr[i].id + '">\u2715</button></div>';
@@ -210,17 +230,24 @@ svg{width:100%;height:auto;display:block}
       db.ses.push({ id: uid(), tid: tr.id, name: tr.name, start: isNaN(t) ? Date.now() : t, end: null, runs: [] });
     },
     finishSes: function () { if (!confirm('Finish this training?')) return false; var s = activeSes(); endRun(s); s.end = Date.now(); },
-    startRun: function (el) { var s = activeSes(), e = byId(db.ex, el.getAttribute('data-id')); endRun(s); s.runs.push({ id: uid(), eid: e.id, name: e.name, rest: e.rest, start: Date.now(), end: null, sets: [] }); },
+    startRun: function (el) { var s = activeSes(), e = byId(db.ex, el.getAttribute('data-id')); endRun(s); s.runs.push({ id: uid(), eid: e.id, name: e.name, rest: e.rest, sides: !!e.sides, start: Date.now(), end: null, sets: [] }); },
     endRun: function () { endRun(activeSes()); },
     logSet: function () {
-      var w = parseFloat($('w').value), r = parseInt($('r').value, 10);
+      var run = activeRun(activeSes()), w = parseFloat($('w').value), r = parseInt($('r').value, 10), set;
       if (isNaN(w) || isNaN(r)) { alert('Enter weight and reps.'); return false; }
-      var run = activeRun(activeSes()); run.sets.push({ n: run.sets.length + 1, w: w, r: r, t: Date.now() });
+      set = { n: run.sets.length + 1, w: w, r: r, t: Date.now() };
+      if (run.sides) {
+        var l = parseInt($('l').value, 10), wl = parseFloat($('wl').value);
+        if (isNaN(l)) { alert('Enter reps for the left side.'); return false; }
+        set.l = l;
+        if (!isNaN(wl) && wl !== w) set.wl = wl;
+      }
+      run.sets.push(set);
     },
     undoSet: function () { activeRun(activeSes()).sets.pop(); },
     addEx: function () {
       var n = $('nxName').value.replace(/^\s+|\s+$/g, ''), r = parseInt($('nxRest').value, 10);
-      if (!n) { alert('Enter a name.'); return false; } db.ex.push({ id: uid(), name: n, rest: isNaN(r) ? 90 : r });
+      if (!n) { alert('Enter a name.'); return false; } db.ex.push({ id: uid(), name: n, rest: isNaN(r) ? 90 : r, sides: $('nxSides').checked });
     },
     delEx: function (el) { if (!confirm('Delete this exercise type? Past logs stay.')) return false; var id = el.getAttribute('data-id'); db.ex = db.ex.filter(function (e) { return e.id !== id; }); },
     addTr: function () {
@@ -242,7 +269,8 @@ svg{width:100%;height:auto;display:block}
     if (A[el.getAttribute('data-a')](el) !== false) { save(); render(); }
   });
   document.addEventListener('change', function (e) {
-    var t = e.target, id = t.getAttribute && t.getAttribute('data-rest');
+    var t = e.target, id = t.getAttribute && t.getAttribute('data-rest'), sd = t.getAttribute && t.getAttribute('data-sides');
+    if (sd) { var ex2 = byId(db.ex, sd); if (ex2) { ex2.sides = t.checked; save(); } return; }
     if (id) { var ex = byId(db.ex, id), v = parseInt(t.value, 10); if (ex && !isNaN(v)) { ex.rest = v; save(); } return; }
     if (t.id === 'pgEx') pg.ex = t.value; else if (t.id === 'pgRange') pg.range = t.value; else if (t.id === 'pgMetric') pg.metric = t.value; else return;
     render();

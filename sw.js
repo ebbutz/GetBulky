@@ -1,4 +1,4 @@
-var CACHE = 'gymlog-v1';
+var CACHE = 'gymlog-v2';
 var FILES = ['./', 'index.html', 'manifest.webmanifest'];
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }));
