@@ -51,11 +51,13 @@ svg{width:100%;height:auto;display:block}
     return {
       ex: [{ id: 'e1', name: 'Bench press', rest: 120 }, { id: 'e2', name: 'Overhead press', rest: 90 },
         { id: 'e3', name: 'Squat', rest: 150 }, { id: 'e4', name: 'Barbell row', rest: 90 }, { id: 'e5', name: 'Bicep curl', rest: 60 }],
-      tr: [{ id: 't1', name: 'Push', ex: ['e1', 'e2'] }, { id: 't2', name: 'Legs', ex: ['e3'] }, { id: 't3', name: 'Pull', ex: ['e4', 'e5'] }],
-      ses: []
+      tr: [{ id: 't1', name: 'Push', ex: ['e1', 'e2'], wt: 'wt1' }, { id: 't2', name: 'Legs', ex: ['e3'], wt: 'wt1' }, { id: 't3', name: 'Pull', ex: ['e4', 'e5'], wt: 'wt1' }],
+      ses: [], oth: [],
+      wt: [{ id: 'wt1', name: 'Build muscle' }, { id: 'wt2', name: 'CrossFit' }, { id: 'wt3', name: 'HIIT' }],
+      wu: [{ id: 'wu1', name: 'Rowing' }, { id: 'wu2', name: 'Running' }, { id: 'wu3', name: 'Cycling' }]
     };
   }
-  function load() { try { var s = localStorage.getItem(KEY); if (s) return JSON.parse(s); } catch (e) {} return seed(); }
+  function load() { try { var s = localStorage.getItem(KEY); if (s) return fix(JSON.parse(s)); } catch (e) {} return seed(); }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { alert('Could not save data.'); } }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function $(id) { return document.getElementById(id); }
@@ -73,6 +75,89 @@ svg{width:100%;height:auto;display:block}
       for (var j = db.ses[i].runs.length - 1; j >= 0; j--) if (db.ses[i].runs[j].eid === eid && db.ses[i].runs[j].sets.length) return db.ses[i].runs[j].sets;
     }
     return null;
+  }
+  var owSel = '', wuSel = '', actLimit = 3;
+  function fix(d) {
+    var i, j, f, bm = null;
+    d.wu = d.wu || []; d.oth = d.oth || [];
+    if (!d.wt) d.wt = [{ id: 'wt1', name: 'Build muscle' }, { id: 'wt2', name: 'CrossFit' }, { id: 'wt3', name: 'HIIT' }];
+    for (i = 0; i < d.wt.length; i++) if (String(d.wt[i].name).toLowerCase() === 'build muscle') bm = d.wt[i];
+    for (i = 0; i < d.tr.length; i++) if (!d.tr[i].wt && bm) d.tr[i].wt = bm.id;
+    for (i = 0; i < d.oth.length; i++) {
+      if (d.oth[i].wt) continue;
+      f = null;
+      for (j = 0; j < d.wt.length; j++) if (String(d.wt[j].name).toLowerCase() === String(d.oth[i].name).toLowerCase()) f = d.wt[j];
+      if (!f) { f = { id: uid(), name: d.oth[i].name }; d.wt.push(f); }
+      d.oth[i].wt = f.id;
+    }
+    return d;
+  }
+  function trim(t) { return String(t).replace(/^\s+|\s+$/g, ''); }
+  function wtName(id) { var w = byId(db.wt, id); return w ? w.name : ''; }
+  function wtSelect(id) {
+    var h = '<select id="' + id + '">', i;
+    for (i = 0; i < db.wt.length; i++) h += '<option value="' + db.wt[i].id + '"' + (db.wt[i].name.toLowerCase() === 'build muscle' ? ' selected' : '') + '>' + esc(db.wt[i].name) + '</option>';
+    return h + '</select>';
+  }
+  function typeSel(id, list, sel) {
+    var h = '<select id="' + id + '"><option value="">Select\u2026</option>', i;
+    for (i = 0; i < list.length; i++) h += '<option value="' + list[i].id + '"' + (list[i].id === sel ? ' selected' : '') + '>' + esc(list[i].name) + '</option>';
+    return h + '<option value="__new">+ New type\u2026</option></select>';
+  }
+  function warmSec(x) { return x.sec != null ? x.sec : Math.round((x.min || 0) * 60); }
+  function warmLine(x) { return x.name + (x.km ? ' ' + x.km + ' km' : '') + ' \u00b7 ' + mmss(warmSec(x)) + ' min'; }
+  function warmText(w) { return w.map(warmLine).join(', '); }
+  function warmHtml(s) {
+    return '<h2>Warm-up</h2><div class="card"><label>Warm-up type</label>' + typeSel('wuType', db.wu, wuSel) +
+      '<div class="two" style="grid-template-columns:1fr 1fr 1.4fr"><div><label>Min</label><input id="wuMin" type="number" inputmode="numeric" min="0"></div>' +
+      '<div><label>Sec</label><input id="wuSec" type="number" inputmode="numeric" min="0" max="59"></div>' +
+      '<div><label>Distance (km)</label><input id="wuKm" type="number" inputmode="decimal" step="0.1" placeholder="optional"></div></div>' +
+      '<button class="full sec" data-a="addWarm">Add warm-up</button></div>';
+  }
+  function otherHtml() {
+    var used = {}, avail = [], i;
+    for (i = 0; i < db.tr.length; i++) if (db.tr[i].wt) used[db.tr[i].wt] = 1;
+    for (i = 0; i < db.wt.length; i++) if (!used[db.wt[i].id]) avail.push(db.wt[i]);
+    return '<h2>Other workouts</h2><div class="card"><label>Workout type</label>' + typeSel('owType', avail, owSel) +
+      '<label>Date and time</label><input type="datetime-local" id="owStart" value="' + inputTime(Date.now()) + '">' +
+      '<label>Duration (min, optional)</label><input id="owMin" type="number" inputmode="numeric">' +
+      '<button class="full" data-a="addOther">Save workout</button></div>';
+  }
+  function actHtml() {
+    var items = [], i, n, cap, x, h;
+    for (i = 0; i < db.ses.length; i++) if (db.ses[i].end) items.push({ t: db.ses[i].start, s: db.ses[i] });
+    for (i = 0; i < db.oth.length; i++) items.push({ t: db.oth[i].start, o: db.oth[i] });
+    if (!items.length) return '';
+    items.sort(function (a, b) { return b.t - a.t; });
+    cap = Math.min(10, items.length); n = Math.min(actLimit, cap);
+    h = '<h2>Recent activity</h2>';
+    for (i = 0; i < n; i++) {
+      if (items[i].s) {
+        x = items[i].s;
+        var mins = Math.round((x.end - x.start) / 60000);
+        h += '<div class="card"><b>' + esc(x.name) + '</b><div class="mute">' + (x.wtName ? esc(x.wtName) + ' \u00b7 ' : '') + fmtDate(x.start) + (mins > 0 ? ' \u00b7 ' + mins + ' min' : '') + '</div>' +
+          (x.warmups && x.warmups.length ? '<div class="mute">Warm-up: ' + esc(warmText(x.warmups)) + '</div>' : '') + '</div>';
+      } else {
+        x = items[i].o;
+        h += '<div class="card row"><div><b>' + esc(x.name) + '</b><div class="mute">' + fmtDate(x.start) + (x.min ? ' \u00b7 ' + x.min + ' min' : '') + '</div></div>' +
+          '<button class="del" data-a="delOther" data-id="' + x.id + '">\u2715</button></div>';
+      }
+    }
+    if (n < cap || actLimit > 3) {
+      h += '<div class="row">' + (n < cap ? '<button class="sec" data-a="moreAct">Show more</button>' : '<span></span>') +
+        (actLimit > 3 ? '<button class="del" data-a="lessAct">Show less</button>' : '') + '</div>';
+    }
+    return h;
+  }
+  function wtSetup() {
+    var h = '<h2>Workout types</h2><div class="card">', i;
+    for (i = 0; i < db.wt.length; i++) h += '<div class="row" style="margin-bottom:6px"><span>' + esc(db.wt[i].name) + '</span><button class="del" data-a="delWt" data-id="' + db.wt[i].id + '">\u2715</button></div>';
+    return h + '<label>New workout type</label><input id="nwtName" placeholder="e.g. Cardio"><button class="full" data-a="addWt">Add workout type</button></div>';
+  }
+  function wuSetup() {
+    var h = '<h2>Warm-up types</h2><div class="card">', i;
+    for (i = 0; i < db.wu.length; i++) h += '<div class="row" style="margin-bottom:6px"><span>' + esc(db.wu[i].name) + '</span><button class="del" data-a="delWu" data-id="' + db.wu[i].id + '">\u2715</button></div>';
+    return h + '<label>New warm-up type</label><input id="nwuName" placeholder="e.g. Rowing"><button class="full" data-a="addWuType">Add warm-up type</button></div>';
   }
   function rec(x) {
     if (x.rounds && x.reps) return x.rounds + ' \u00d7 ' + x.reps;
@@ -114,12 +199,11 @@ svg{width:100%;height:auto;display:block}
       for (i = 0; i < db.tr.length; i++) h += '<option value="' + db.tr[i].id + '">' + esc(db.tr[i].name) + '</option>';
       h += '</select><label>Start date and time</label><input type="datetime-local" id="trStart" value="' + inputTime(Date.now()) + '">' +
         '<button class="full" data-a="startSes">Start training</button></div>';
-      var done = db.ses.filter(function (x) { return x.end; }).slice(-3).reverse();
-      if (done.length) { h += '<h2>Recent</h2>'; for (i = 0; i < done.length; i++) h += '<div class="card"><b>' + esc(done[i].name) + '</b><div class="mute">' + fmtDate(done[i].start) + ' \u2013 ' + mmss((done[i].end - done[i].start) / 1000) + ' h:min</div></div>'; }
+      h += otherHtml() + actHtml();
       return h;
     }
     var run = activeRun(s);
-    h += '<div class="card"><div class="row"><div><b>' + esc(s.name) + '</b><div class="mute">Started ' + fmtDate(s.start) + '</div></div>' +
+    h += '<div class="card"><div class="row"><div><b>' + esc(s.name) + '</b><div class="mute">' + (s.wtName ? esc(s.wtName) + ' \u00b7 ' : '') + 'Started ' + fmtDate(s.start) + '</div></div>' +
       '<button class="sec" data-a="finishSes">Finish</button></div></div>';
     if (run) {
       var prev = lastSets(run.eid, s), n = run.sets.length, last = n ? run.sets[n - 1] : (prev ? prev[0] : { w: '', r: '' });
@@ -136,12 +220,15 @@ svg{width:100%;height:auto;display:block}
       h += '<button class="full" data-a="endRun">End exercise</button>';
     } else {
       var tr = byId(db.tr, s.tid), ids = tr ? tr.ex : [], other = '', e;
+      h += warmHtml(s);
       h += '<h2>Start an exercise</h2>';
       for (i = 0; i < ids.length; i++) { e = byId(db.ex, ids[i]); if (e) h += exCard(e); }
       for (i = 0; i < db.ex.length; i++) if (ids.indexOf(db.ex[i].id) < 0) other += exCard(db.ex[i]);
       if (other) h += '<details><summary class="mute" style="padding:8px 0">Other exercises</summary>' + other + '</details>';
-      if (s.runs.length) {
+      var wl = s.warmups || [];
+      if (s.runs.length || wl.length) {
         h += '<h2>Done so far</h2><div class="card">';
+        for (i = 0; i < wl.length; i++) h += '<div class="row" style="margin-bottom:4px"><span><b>Warm-up</b> <span class="mute">' + esc(warmLine(wl[i])) + '</span></span><button class="del" data-a="delWarm" data-id="' + wl[i].id + '">\u2715</button></div>';
         for (i = 0; i < s.runs.length; i++) h += '<div><b>' + esc(s.runs[i].name) + '</b> <span class="mute">' + esc(setsText(s.runs[i].sets)) + '</span></div>';
         h += '</div>';
       }
@@ -208,10 +295,10 @@ svg{width:100%;height:auto;display:block}
     h += '<label>New exercise</label><input id="nxName" placeholder="Name"><label>Break (seconds)</label><input id="nxRest" type="number" inputmode="numeric" value="90"><div class="two"><div><label>Recommended rounds</label><input id="nxRounds" placeholder="3"></div><div><label>Recommended reps</label><input id="nxReps" placeholder="8\u201312"></div></div><label class="chk"><input type="checkbox" id="nxSides">Track left and right separately</label>' +
       '<button class="full" data-a="addEx">Add exercise</button></div><h2>Training types</h2><div class="card">';
     for (i = 0; i < db.tr.length; i++) h += '<div class="row" style="margin-bottom:8px"><div><b>' + esc(db.tr[i].name) + '</b><div class="mute">' +
-      esc(db.tr[i].ex.map(function (id) { var e = byId(db.ex, id); return e ? e.name : '?'; }).join(', ')) + '</div></div><button class="del" data-a="delTr" data-id="' + db.tr[i].id + '">\u2715</button></div>';
-    h += '<label>New training</label><input id="ntName" placeholder="Name">';
+      (wtName(db.tr[i].wt) ? esc(wtName(db.tr[i].wt)) + ' \u00b7 ' : '') + esc(db.tr[i].ex.map(function (id) { var e = byId(db.ex, id); return e ? e.name : '?'; }).join(', ')) + '</div></div><button class="del" data-a="delTr" data-id="' + db.tr[i].id + '">\u2715</button></div>';
+    h += '<label>New training</label><input id="ntName" placeholder="Name"><label>Workout type</label>' + wtSelect('ntWt') + '<label>Exercises</label>';
     for (i = 0; i < db.ex.length; i++) h += '<label class="chk"><input type="checkbox" data-ntex="' + db.ex[i].id + '">' + esc(db.ex[i].name) + '</label>';
-    h += '<button class="full" data-a="addTr">Add training</button></div><h2>Backup</h2><div class="card"><div class="mute">Copy this text to keep a backup. Paste a backup here and tap Import to restore.</div>' +
+    h += '<button class="full" data-a="addTr">Add training</button></div>' + wtSetup() + wuSetup() + '<h2>Backup</h2><div class="card"><div class="mute">Copy this text to keep a backup. Paste a backup here and tap Import to restore.</div>' +
       '<textarea id="bk" rows="4">' + esc(JSON.stringify(db)) + '</textarea><button class="full sec" data-a="import">Import</button></div>';
     return h;
   }
@@ -239,7 +326,7 @@ svg{width:100%;height:auto;display:block}
   var A = {
     startSes: function () {
       var tr = byId(db.tr, $('trSel').value), v = $('trStart').value, t = v ? new Date(v).getTime() : Date.now();
-      db.ses.push({ id: uid(), tid: tr.id, name: tr.name, start: isNaN(t) ? Date.now() : t, end: null, runs: [] });
+      db.ses.push({ id: uid(), tid: tr.id, name: tr.name, wtName: wtName(tr.wt), start: isNaN(t) ? Date.now() : t, end: null, runs: [] });
     },
     finishSes: function () { if (!confirm('Finish this training?')) return false; var s = activeSes(); endRun(s); s.end = Date.now(); },
     startRun: function (el) { var s = activeSes(), e = byId(db.ex, el.getAttribute('data-id')); endRun(s); s.runs.push({ id: uid(), eid: e.id, name: e.name, rest: e.rest, sides: !!e.sides, rounds: e.rounds || '', reps: e.reps || '', start: Date.now(), end: null, sets: [] }); },
@@ -266,11 +353,35 @@ svg{width:100%;height:auto;display:block}
       var n = $('ntName').value.replace(/^\s+|\s+$/g, ''), ids = [], c = document.querySelectorAll('[data-ntex]');
       if (!n) { alert('Enter a name.'); return false; }
       for (var i = 0; i < c.length; i++) if (c[i].checked) ids.push(c[i].getAttribute('data-ntex'));
-      db.tr.push({ id: uid(), name: n, ex: ids });
+      db.tr.push({ id: uid(), name: n, ex: ids, wt: $('ntWt').value });
     },
     delTr: function (el) { if (!confirm('Delete this training type? Past logs stay.')) return false; var id = el.getAttribute('data-id'); db.tr = db.tr.filter(function (t) { return t.id !== id; }); },
+    addWarm: function () {
+      var s = activeSes(), ty = byId(db.wu, $('wuType').value), mi = parseInt($('wuMin').value, 10), se = parseInt($('wuSec').value, 10),
+        km = parseFloat($('wuKm').value), sec, e;
+      mi = isNaN(mi) ? 0 : mi; se = isNaN(se) ? 0 : se; sec = mi * 60 + se;
+      if (!ty) { alert('Select a warm-up type.'); return false; }
+      if (mi < 0 || se < 0 || se > 59 || sec <= 0) { alert('Enter a duration in minutes and seconds (seconds from 0 to 59).'); return false; }
+      e = { id: uid(), wu: ty.id, name: ty.name, sec: sec };
+      if (!isNaN(km) && km > 0) e.km = km;
+      s.warmups = s.warmups || []; s.warmups.push(e); wuSel = ty.id;
+    },
+    delWarm: function (el) { var s = activeSes(), id = el.getAttribute('data-id'); s.warmups = (s.warmups || []).filter(function (x) { return x.id !== id; }); },
+    delWu: function (el) { var id = el.getAttribute('data-id'); db.wu = db.wu.filter(function (x) { return x.id !== id; }); },
+    addOther: function () {
+      var ty = byId(db.wt, $('owType').value), v = $('owStart').value, t = v ? new Date(v).getTime() : NaN, raw = trim($('owMin').value), m = raw === '' ? null : parseFloat(raw);
+      if (!ty || isNaN(t)) { alert('Select a workout type and enter a date and time.'); return false; }
+      if (m !== null && (isNaN(m) || m <= 0)) { alert('The duration is optional, but if you enter one it must be above 0.'); return false; }
+      db.oth.push({ id: uid(), wt: ty.id, name: ty.name, start: t, min: m }); owSel = ty.id;
+    },
+    moreAct: function () { actLimit = Math.min(10, actLimit + 3); },
+    lessAct: function () { actLimit = 3; },
+    addWuType: function () { var n = trim($('nwuName').value); if (!n) { alert('Enter a name.'); return false; } db.wu.push({ id: uid(), name: n }); },
+    addWt: function () { var n = trim($('nwtName').value); if (!n) { alert('Enter a name.'); return false; } db.wt.push({ id: uid(), name: n }); },
+    delWt: function (el) { if (!confirm('Delete this workout type? Past entries stay.')) return false; var id = el.getAttribute('data-id'); db.wt = db.wt.filter(function (x) { return x.id !== id; }); },
+    delOther: function (el) { if (!confirm('Delete this workout?')) return false; var id = el.getAttribute('data-id'); db.oth = db.oth.filter(function (x) { return x.id !== id; }); },
     'import': function () {
-      try { var d = JSON.parse($('bk').value); if (!d.ex || !d.tr || !d.ses) throw 0; db = d; } catch (e) { alert('That is not a valid backup.'); return false; }
+      try { var d = JSON.parse($('bk').value); if (!d.ex || !d.tr || !d.ses) throw 0; db = fix(d); } catch (e) { alert('That is not a valid backup.'); return false; }
     }
   };
   document.addEventListener('click', function (e) {
@@ -282,6 +393,15 @@ svg{width:100%;height:auto;display:block}
   });
   document.addEventListener('change', function (e) {
     var t = e.target, id = t.getAttribute && t.getAttribute('data-rest'), sd = t.getAttribute && t.getAttribute('data-sides');
+    if ((t.id === 'owType' || t.id === 'wuType') && t.value === '__new') {
+      var nm = trim(prompt('Name of the new type') || '');
+      if (nm) {
+        var nid = uid();
+        if (t.id === 'owType') { db.wt.push({ id: nid, name: nm }); owSel = nid; } else { db.wu.push({ id: nid, name: nm }); wuSel = nid; }
+        save();
+      }
+      render(); return;
+    }
     if (sd) { var ex2 = byId(db.ex, sd); if (ex2) { ex2.sides = t.checked; save(); } return; }
     var rd = t.getAttribute && t.getAttribute('data-rounds'), rp = t.getAttribute && t.getAttribute('data-reps');
     if (rd || rp) { var ex3 = byId(db.ex, rd || rp); if (ex3) { ex3[rd ? 'rounds' : 'reps'] = t.value.replace(/^\s+|\s+$/g, ''); save(); } return; }
