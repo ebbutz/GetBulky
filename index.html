@@ -29,6 +29,13 @@ button.full{width:100%;margin-top:10px}
 .timer{font-size:56px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;margin:4px 0}
 .timer.done{color:var(--ok)}
 .sets div{padding:6px 0;border-top:1px solid var(--line)}
+.tile{display:flex;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.tile .ico{flex:none;width:38px;height:38px;border-radius:9px;background:var(--bg);color:var(--acc);display:flex;align-items:center;justify-content:center;margin-right:12px}
+.tile.done .ico{color:var(--ok)}
+.tile .tb{flex:1;min-width:0}
+.tile .tb b{display:block}
+.tile>button{margin-left:8px;flex:none}
+details>summary{cursor:pointer}
 table{width:100%;border-collapse:collapse;font-size:14px}
 td,th{padding:6px 4px;border-top:1px solid var(--line);text-align:left;vertical-align:top}
 #tabs{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0)}
@@ -44,7 +51,7 @@ svg{width:100%;height:auto;display:block}
 <div id="tabs"></div>
 <script>
 (function () {
-  var KEY = 'gymlog.v1', tab = 'train', db = load(), timerId = null;
+  var KEY = 'gymlog.v1', KEY_COPY = 'gymlog.lastcopy', tab = 'train', db = load(), timerId = null;
   var pg = { ex: 'all', metric: 'top', range: '5' };
 
   function seed() {
@@ -165,8 +172,35 @@ svg{width:100%;height:auto;display:block}
     if (x.reps) return x.reps + ' reps';
     return '';
   }
+  var ICO = {
+    dumb: '<path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/>',
+    check: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>',
+    flame: '<path d="M12 3c.6 3 4 4.6 4 8.6a4 4 0 0 1-8 0c0-1.6.7-2.8 1.6-3.7C9.6 9.6 11.3 8 12 3z"/>'
+  };
+  function tile(k, title, sub, btn, done) {
+    return '<div class="tile' + (done ? ' done' : '') + '"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICO[k] +
+      '</svg></span><div class="tb"><b>' + esc(title) + '</b><div class="mute">' + sub + '</div></div>' + (btn || '') + '</div>';
+  }
   function exCard(e) {
-    return '<div class="card row"><div><b>' + esc(e.name) + '</b><div class="mute">' + (rec(e) ? 'Recommended ' + rec(e) + ' \u00b7 ' : '') + 'Break ' + mmss(e.rest) + '</div></div><button data-a="startRun" data-id="' + e.id + '">Start</button></div>';
+    return tile('dumb', e.name, (rec(e) ? 'Recommended ' + esc(rec(e)) + ' \u00b7 ' : '') + 'Break ' + mmss(e.rest), '<button data-a="startRun" data-id="' + e.id + '">Start</button>');
+  }
+  function runTile(r) {
+    var n = r.sets.length;
+    return tile('check', r.name, n ? n + (n === 1 ? ' set' : ' sets') + ' \u00b7 ' + esc(setsText(r.sets)) : 'No sets logged', '<button class="del" data-a="delRun" data-id="' + r.id + '">\u2715</button>', true);
+  }
+  function warmTile(w) { return tile('flame', 'Warm-up', esc(warmLine(w)), '<button class="del" data-a="delWarm" data-id="' + w.id + '">\u2715</button>', true); }
+  function lastCopyText() { var v = null; try { v = localStorage.getItem(KEY_COPY); } catch (e) {} return v ? fmtDate(parseInt(v, 10)) : 'never'; }
+  function logIt() {
+    var run = activeRun(activeSes()), w = parseFloat($('w').value), r = parseInt($('r').value, 10), set;
+    if (isNaN(w) || isNaN(r)) { alert('Enter weight and reps.'); return false; }
+    set = { n: run.sets.length + 1, w: w, r: r, t: Date.now() };
+    if (run.sides) {
+      var l = parseInt($('l').value, 10), wl = parseFloat($('wl').value);
+      if (isNaN(l)) { alert('Enter reps for the left side.'); return false; }
+      set.l = l;
+      if (!isNaN(wl) && wl !== w) set.wl = wl;
+    }
+    run.sets.push(set);
   }
   function setTxt(x) {
     var t = x.w + '\u00d7' + x.r;
@@ -211,27 +245,25 @@ svg{width:100%;height:auto;display:block}
         (prev ? '<div class="mute">Last time: ' + esc(setsText(prev)) + '</div>' : '') +
         '<div class="timer" id="timer"></div><div class="mute" style="text-align:center" id="timerNote"></div>' +
         inputsHtml(run, last) +
-        '<button class="full" data-a="logSet">Log set and start break</button></div>';
+        '<button class="full" data-a="logSet">Log set and start break</button>' +
+        '<button class="full sec" data-a="logEnd">Log set and end exercise</button>' +
+        (n ? '<button class="del full" data-a="endRun">End without logging a set</button>' : '<button class="del full" data-a="cancelRun">Cancel exercise</button>') + '</div>';
       if (n) {
         h += '<div class="card sets">';
         for (i = 0; i < n; i++) h += '<div>Set ' + run.sets[i].n + ': ' + setLong(run.sets[i]) + '</div>';
-        h += '<button class="sec full" data-a="undoSet">Remove last set</button></div>';
+        h += '<button class="del full" data-a="undoSet">Remove last set</button></div>';
       }
-      h += '<button class="full" data-a="endRun">End exercise</button>';
     } else {
-      var tr = byId(db.tr, s.tid), ids = tr ? tr.ex : [], other = '', e;
+      var tr = byId(db.tr, s.tid), ids = tr ? tr.ex : [], doneIds = {}, openT = '', other = '', doneT = '', e, wl = s.warmups || [];
+      for (i = 0; i < s.runs.length; i++) doneIds[s.runs[i].eid] = 1;
       h += warmHtml(s);
-      h += '<h2>Start an exercise</h2>';
-      for (i = 0; i < ids.length; i++) { e = byId(db.ex, ids[i]); if (e) h += exCard(e); }
-      for (i = 0; i < db.ex.length; i++) if (ids.indexOf(db.ex[i].id) < 0) other += exCard(db.ex[i]);
-      if (other) h += '<details><summary class="mute" style="padding:8px 0">Other exercises</summary>' + other + '</details>';
-      var wl = s.warmups || [];
-      if (s.runs.length || wl.length) {
-        h += '<h2>Done so far</h2><div class="card">';
-        for (i = 0; i < wl.length; i++) h += '<div class="row" style="margin-bottom:4px"><span><b>Warm-up</b> <span class="mute">' + esc(warmLine(wl[i])) + '</span></span><button class="del" data-a="delWarm" data-id="' + wl[i].id + '">\u2715</button></div>';
-        for (i = 0; i < s.runs.length; i++) h += '<div><b>' + esc(s.runs[i].name) + '</b> <span class="mute">' + esc(setsText(s.runs[i].sets)) + '</span></div>';
-        h += '</div>';
-      }
+      for (i = 0; i < ids.length; i++) { e = byId(db.ex, ids[i]); if (e && !doneIds[e.id]) openT += exCard(e); }
+      for (i = 0; i < db.ex.length; i++) if (ids.indexOf(db.ex[i].id) < 0 && !doneIds[db.ex[i].id]) other += exCard(db.ex[i]);
+      h += '<h2>Open</h2>' + (openT || '<div class="mute" style="margin-bottom:10px">All exercises of this training are done.</div>');
+      if (other) h += '<details style="margin-bottom:10px"><summary class="mute" style="padding:0 0 10px">Other exercises</summary>' + other + '</details>';
+      for (i = 0; i < wl.length; i++) doneT += warmTile(wl[i]);
+      for (i = 0; i < s.runs.length; i++) doneT += runTile(s.runs[i]);
+      if (doneT) h += '<h2>Done</h2>' + doneT;
     }
     return h;
   }
@@ -299,7 +331,7 @@ svg{width:100%;height:auto;display:block}
     h += '<label>New training</label><input id="ntName" placeholder="Name"><label>Workout type</label>' + wtSelect('ntWt') + '<label>Exercises</label>';
     for (i = 0; i < db.ex.length; i++) h += '<label class="chk"><input type="checkbox" data-ntex="' + db.ex[i].id + '">' + esc(db.ex[i].name) + '</label>';
     h += '<button class="full" data-a="addTr">Add training</button></div>' + wtSetup() + wuSetup() + '<h2>Backup</h2><div class="card"><div class="mute">Copy this text to keep a backup. Paste a backup here and tap Import to restore.</div>' +
-      '<textarea id="bk" rows="4">' + esc(JSON.stringify(db)) + '</textarea><button class="full sec" data-a="import">Import</button></div>';
+      '<textarea id="bk" rows="4">' + esc(JSON.stringify(db)) + '</textarea><button class="full" data-a="copy">Copy backup</button><div class="mute" style="margin-top:6px">Last copied: ' + lastCopyText() + '</div><button class="full sec" data-a="import">Import</button></div>';
     return h;
   }
 
@@ -331,17 +363,19 @@ svg{width:100%;height:auto;display:block}
     finishSes: function () { if (!confirm('Finish this training?')) return false; var s = activeSes(); endRun(s); s.end = Date.now(); },
     startRun: function (el) { var s = activeSes(), e = byId(db.ex, el.getAttribute('data-id')); endRun(s); s.runs.push({ id: uid(), eid: e.id, name: e.name, rest: e.rest, sides: !!e.sides, rounds: e.rounds || '', reps: e.reps || '', start: Date.now(), end: null, sets: [] }); },
     endRun: function () { endRun(activeSes()); },
-    logSet: function () {
-      var run = activeRun(activeSes()), w = parseFloat($('w').value), r = parseInt($('r').value, 10), set;
-      if (isNaN(w) || isNaN(r)) { alert('Enter weight and reps.'); return false; }
-      set = { n: run.sets.length + 1, w: w, r: r, t: Date.now() };
-      if (run.sides) {
-        var l = parseInt($('l').value, 10), wl = parseFloat($('wl').value);
-        if (isNaN(l)) { alert('Enter reps for the left side.'); return false; }
-        set.l = l;
-        if (!isNaN(wl) && wl !== w) set.wl = wl;
-      }
-      run.sets.push(set);
+    logSet: function () { return logIt(); },
+    logEnd: function () { if (logIt() === false) return false; endRun(activeSes()); },
+    cancelRun: function () { var s = activeSes(); s.runs = s.runs.filter(function (r) { return r.end; }); },
+    delRun: function (el) {
+      if (!confirm('Remove this exercise and its sets from the training?')) return false;
+      var s = activeSes(), id = el.getAttribute('data-id'); s.runs = s.runs.filter(function (r) { return r.id !== id; });
+    },
+    copy: function () {
+      var ta = $('bk'), ok = false;
+      try { ta.focus(); ta.select(); ta.setSelectionRange(0, ta.value.length); ok = document.execCommand('copy'); } catch (e) {}
+      if (!ok && navigator.clipboard && navigator.clipboard.writeText) { try { navigator.clipboard.writeText(ta.value); ok = true; } catch (e2) {} }
+      if (!ok) { alert('Copy did not work. Select the text in the box and copy it manually.'); return false; }
+      try { localStorage.setItem(KEY_COPY, String(Date.now())); } catch (e3) {}
     },
     undoSet: function () { activeRun(activeSes()).sets.pop(); },
     addEx: function () {
