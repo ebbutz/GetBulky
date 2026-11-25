@@ -25,3 +25,5 @@ Open `index.html` in a browser, or run `python3 -m http.server` in this folder.
 For exercises with `sides`, `r` is reps on the right, `l` reps on the left, and `wl` the left weight if it differs from `w`.
 
 A session also has `wtName` (its workout type) and can have `warmups: [{id, wu, name, sec, km?}]` (`sec` = duration in seconds; older entries have `min`).
+
+The date of the last "Copy backup" is kept on the device only (`localStorage` key `gymlog.lastcopy`), not in the backup text.
