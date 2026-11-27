@@ -193,25 +193,44 @@ svg{width:100%;height:auto;display:block}
     return '<div class="card"><b>Muscles worked</b>' + bodySvg(v) + t + '</div>';
   }
   function sesMus(s) {
-    var tot = {}, i, j, m, n, max = 0, k, out = [];
+    var tot = {}, i, j, k, m, run, e, v, n, x, xl, max = 0, out = [], t;
     for (i = 0; i < s.runs.length; i++) {
-      n = s.runs[i].sets.length; if (!n) continue;
-      m = musOf(s.runs[i].eid, s.runs[i].name);
-      for (j = 0; j < m.p.length; j++) tot[m.p[j]] = (tot[m.p[j]] || 0) + n;
-      for (j = 0; j < m.s.length; j++) tot[m.s[j]] = (tot[m.s[j]] || 0) + n * 0.5;
+      run = s.runs[i]; n = run.sets.length; if (!n) continue;
+      e = byId(db.ex, run.eid); v = 0;
+      if (!(e && e.lower)) for (j = 0; j < n; j++) { x = run.sets[j]; xl = x.wl != null ? x.wl : x.w; v += x.w * x.r + (x.l != null ? xl * x.l : 0); }
+      m = musOf(run.eid, run.name);
+      for (j = 0; j < m.p.length + m.s.length; j++) {
+        k = j < m.p.length ? m.p[j] : m.s[j - m.p.length]; t = j < m.p.length ? 1 : 0.5;
+        if (!tot[k]) tot[k] = { id: k, v: 0, n: 0 };
+        tot[k].v += v * t; tot[k].n += n * t;
+      }
     }
-    for (k in tot) if (tot.hasOwnProperty(k)) { out.push({ id: k, n: tot[k] }); if (tot[k] > max) max = tot[k]; }
-    out.sort(function (a, b) { return b.n - a.n; });
+    for (k in tot) if (tot.hasOwnProperty(k)) { out.push(tot[k]); if (tot[k].v > max) max = tot[k].v; }
+    out.sort(function (a, b) { return b.v - a.v || b.n - a.n; });
     return { list: out, max: max };
   }
+  function musUsual(s) {
+    var i, j, prev = [], r, avg = {}, cnt = {}, k;
+    for (i = db.ses.length - 1; i >= 0 && prev.length < 3; i--) if (db.ses[i].tid === s.tid && db.ses[i].end && db.ses[i].start < s.start && db.ses[i].id !== s.id) prev.push(db.ses[i]);
+    for (i = 0; i < prev.length; i++) { r = sesMus(prev[i]).list; for (j = 0; j < r.length; j++) if (r[j].v > 0) { avg[r[j].id] = (avg[r[j].id] || 0) + r[j].v; cnt[r[j].id] = (cnt[r[j].id] || 0) + 1; } }
+    for (k in avg) if (avg.hasOwnProperty(k)) avg[k] = avg[k] / cnt[k];
+    return { avg: avg, n: prev.length };
+  }
   function sesMusHtml(s) {
-    var r = sesMus(s), v = {}, i, h = '';
+    var r = sesMus(s), u = musUsual(s), v = {}, i, h = '', x, d, pct;
     if (!r.list.length) return '';
-    for (i = 0; i < r.list.length; i++) v[r.list[i].id] = r.list[i].n / r.max;
-    h = '<h2>Muscles trained</h2><div class="card">' + bodySvg(v) + '<div class="mlist">';
-    for (i = 0; i < r.list.length; i++)
-      h += '<div class="row"><span>' + esc(mName(r.list[i].id)) + '</span><span><span class="mbar" style="width:' + Math.round(8 + 60 * r.list[i].n / r.max) + 'px"></span>' + (Math.round(r.list[i].n * 2) / 2) + '</span></div>';
-    return h + '</div><div class="mute" style="margin-top:8px">Sets per muscle. Sets where the muscle is a helper count half. Darker = trained more.</div></div>';
+    for (i = 0; i < r.list.length; i++) if (r.max > 0) v[r.list[i].id] = r.list[i].v / r.max;
+    h = '<h2>Muscles trained</h2><div class="card">' + bodySvg(v) +
+      '<div class="mute" style="text-align:center">Darker = more volume (kg × reps)</div>' +
+      '<details style="margin-top:10px"><summary class="mute">Details per muscle</summary><div class="mlist">';
+    for (i = 0; i < r.list.length; i++) {
+      x = r.list[i]; d = '';
+      if (x.v > 0 && u.avg[x.id]) { pct = Math.round((x.v / u.avg[x.id] - 1) * 100); d = ' <span class="mute">' + (pct > 0 ? '+' : '') + pct + '%</span>'; }
+      h += '<div class="row"><span>' + esc(mName(x.id)) + '</span><span>' + (x.v > 0 ? '<span class="mbar" style="width:' + Math.round(8 + 50 * x.v / r.max) + 'px"></span>' + Math.round(x.v).toLocaleString('en') + ' kg' + d : '<span class="mute">sets only</span>') +
+        ' <span class="mute">· ' + (Math.round(x.n * 2) / 2) + ' sets</span></span></div>';
+    }
+    return h + '</div><div class="mute" style="margin-top:8px">Helper muscles count half. ' + (u.n ? 'Percent = compared with your average of the last ' + u.n + ' ' + esc(s.name) + ' trainings. ' : '') +
+      'Exercises where lower weight is better, and sets without weight, add sets but no volume.</div></details></div>';
   }
   var nxMp = [], nxMs = [], mOpen = '';
   function mChips(p, sec, attr) {
