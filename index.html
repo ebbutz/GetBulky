@@ -55,6 +55,17 @@ button.full{width:100%;margin-top:10px}
 .tile>button{margin-left:8px;flex:none}
 details>summary{cursor:pointer}
 button:active{opacity:.8;transform:scale(.98)}
+.bd{display:block;width:100%;max-width:300px;margin:6px auto 2px}
+.bd .sil{fill:var(--bg);stroke:var(--line);stroke-width:1.5}
+.bd .m{fill:var(--line);fill-opacity:.55}
+.bd text{font-size:10px;fill:var(--mute);text-anchor:middle}
+.mc{padding:6px 11px;margin:0 6px 6px 0;font-size:14px;font-weight:500;background:transparent;color:var(--mute);border:1px solid var(--line);border-radius:999px}
+.mc.p{background:var(--acc);color:#fff;border-color:var(--acc)}
+.mc.s{color:var(--acc);border-color:var(--acc);background:transparent}
+.mlist{margin-top:8px}.mlist .row{padding:5px 0;border-top:1px solid var(--line);font-size:15px}
+.mbar{display:inline-block;height:8px;border-radius:4px;background:var(--acc);margin-right:8px;vertical-align:middle}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--acc);margin:0 4px 0 10px;vertical-align:middle}
+.dot.s{opacity:.4}.dot:first-child{margin-left:0}
 #toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ok);color:#fff;padding:11px 18px;border-radius:999px;font-weight:600;font-size:15px;opacity:0;pointer-events:none;transform:translateX(-50%) translateY(16px);transition:opacity .2s,transform .2s;z-index:20;max-width:90%;text-align:center}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 @keyframes pop{0%{transform:scale(1.18)}100%{transform:scale(1)}}
@@ -81,6 +92,27 @@ svg{width:100%;height:auto;display:block}
 <div id="toast"></div>
 <script>
 (function () {
+  var MUS = [['chest', 'Chest'], ['fdelt', 'Front shoulders'], ['sdelt', 'Side shoulders'], ['rdelt', 'Rear shoulders'], ['biceps', 'Biceps'], ['triceps', 'Triceps'],
+    ['forearms', 'Forearms'], ['upback', 'Upper back'], ['lats', 'Lats'], ['lowback', 'Lower back'], ['abs', 'Abs'], ['obliques', 'Obliques'],
+    ['glutes', 'Glutes'], ['quads', 'Quads'], ['hams', 'Hamstrings'], ['calves', 'Calves']];
+  var MDEF = [
+    [/goblet squat/i, ['quads', 'glutes'], ['hams', 'abs', 'lowback']],
+    [/bench press/i, ['chest'], ['fdelt', 'triceps']],
+    [/seated cable row|barbell row|cable row/i, ['lats', 'upback'], ['rdelt', 'biceps', 'forearms']],
+    [/glute bridge|hip thrust/i, ['glutes'], ['hams', 'abs']],
+    [/lateral raise/i, ['sdelt'], ['upback']],
+    [/bird.?dog/i, ['lowback', 'glutes'], ['abs', 'rdelt', 'hams']],
+    [/lunge/i, ['quads', 'glutes'], ['hams']],
+    [/romanian|deadlift/i, ['hams', 'glutes'], ['lowback', 'upback', 'forearms']],
+    [/pull.?up|chin.?up/i, ['lats'], ['biceps', 'upback', 'rdelt', 'forearms']],
+    [/push.?up/i, ['chest'], ['fdelt', 'triceps', 'abs']],
+    [/face pull/i, ['rdelt', 'upback'], ['sdelt']],
+    [/calf raise/i, ['calves'], []],
+    [/pallof/i, ['obliques', 'abs'], ['fdelt', 'glutes']],
+    [/overhead press|shoulder press/i, ['fdelt', 'sdelt'], ['triceps', 'upback']],
+    [/squat/i, ['quads', 'glutes'], ['hams', 'abs', 'lowback']],
+    [/curl/i, ['biceps'], ['forearms']]
+  ];
   var KEY = 'gymlog.v1', KEY_COPY = 'gymlog.lastcopy', tab = 'train', db = load(), timerId = null;
   var pg = { ex: 'all', metric: 'top', range: '5' };
 
@@ -115,9 +147,94 @@ svg{width:100%;height:auto;display:block}
     return null;
   }
   var owSel = '', wuSel = '', actLimit = 3, sumId = null, sumMode = 'trends', needTop = false, importMsg = '';
+
+  function mKnown(id) { for (var i = 0; i < MUS.length; i++) if (MUS[i][0] === id) return true; return false; }
+  function mName(id) { for (var i = 0; i < MUS.length; i++) if (MUS[i][0] === id) return MUS[i][1]; return id; }
+  function mClean(a) { var o = [], i; if (!a || !a.length) return o; for (i = 0; i < a.length; i++) if (mKnown(a[i]) && o.indexOf(a[i]) < 0) o.push(a[i]); return o; }
+  function mDefault(name) { for (var i = 0; i < MDEF.length; i++) if (MDEF[i][0].test(String(name))) return MDEF[i]; return null; }
+  function musOf(eid, name) {
+    var e = byId(db.ex, eid), d;
+    if (e && (e.mp || e.ms)) return { p: mClean(e.mp), s: mClean(e.ms) };
+    d = mDefault(name || (e && e.name));
+    return d ? { p: d[1].slice(), s: d[2].slice() } : { p: [], s: [] };
+  }
+  /* body drawing: two views, shapes drawn once and mirrored */
+  function bodySvg(val) {
+    function st(id) { var v = val[id]; return v > 0 ? ' style="fill:var(--acc);fill-opacity:' + (0.22 + 0.78 * v).toFixed(2) + '"' : ''; }
+    function el(id, tag, attrs, mirror) {
+      var a = '<' + tag + ' class="m" ' + attrs + st(id) + '/>';
+      return a + (mirror ? '<' + tag + ' class="m" transform="translate(120 0) scale(-1 1)" ' + attrs + st(id) + '/>' : '');
+    }
+    function e(id, cx, cy, rx, ry, mirror) { return el(id, 'ellipse', 'cx="' + cx + '" cy="' + cy + '" rx="' + rx + '" ry="' + ry + '"', mirror); }
+    function sil() {
+      return '<circle class="sil" cx="60" cy="18" r="12"/><rect class="sil" x="54" y="28" width="12" height="12"/>' +
+        '<path class="sil" d="M36 44Q60 36 84 44L80 86Q78 120 76 128L44 128Q42 120 40 86Z"/>' +
+        '<rect class="sil" x="19" y="48" width="14" height="44" rx="7"/><rect class="sil" x="87" y="48" width="14" height="44" rx="7"/>' +
+        '<rect class="sil" x="14" y="94" width="12" height="46" rx="6"/><rect class="sil" x="94" y="94" width="12" height="46" rx="6"/>' +
+        '<rect class="sil" x="38" y="124" width="21" height="72" rx="10"/><rect class="sil" x="61" y="124" width="21" height="72" rx="10"/>' +
+        '<rect class="sil" x="41" y="196" width="16" height="50" rx="8"/><rect class="sil" x="63" y="196" width="16" height="50" rx="8"/>';
+    }
+    var f = e('chest', 47, 66, 12, 10, 1) + e('fdelt', 36, 55, 6, 8, 1) + e('sdelt', 26, 60, 5, 8, 1) + e('biceps', 26, 80, 6, 13, 1) + e('forearms', 20, 115, 5, 18, 1) +
+      el('abs', 'rect', 'x="52" y="82" width="16" height="36" rx="5"') + e('obliques', 45, 102, 6, 15, 1) + e('quads', 48, 160, 10, 30, 1) + e('calves', 49, 218, 6, 21, 1) +
+      el('upback', 'path', 'd="M48 38L72 38L82 47L38 47Z"');
+    var b = el('upback', 'path', 'd="M60 38L80 48L72 74L60 84L48 74L40 48Z"') + e('rdelt', 34, 56, 8, 9, 1) + el('lats', 'path', 'd="M42 72L52 78L52 106L43 98Z"', 1) +
+      e('triceps', 26, 80, 6, 13, 1) + e('forearms', 20, 115, 5, 18, 1) + el('lowback', 'rect', 'x="51" y="104" width="18" height="16" rx="5"') + e('glutes', 50, 136, 11, 11, 1) +
+      e('hams', 48, 166, 10, 26, 1) + e('calves', 49, 216, 7, 19, 1);
+    return '<svg class="bd" viewBox="0 0 250 262" role="img" aria-label="Muscle diagram, front and back"><g>' + sil() + f + '</g><g transform="translate(130 0)">' + sil() + b + '</g>' +
+      '<text x="60" y="258">Front</text><text x="190" y="258">Back</text></svg>';
+  }
+  function exMusHtml(run) {
+    var m = musOf(run.eid, run.name), v = {}, i, t = '';
+    if (!m.p.length && !m.s.length) return '';
+    for (i = 0; i < m.s.length; i++) v[m.s[i]] = 0.4;
+    for (i = 0; i < m.p.length; i++) v[m.p[i]] = 1;
+    t = '<div class="mute" style="text-align:center"><span class="dot" style="margin-left:0"></span>Primary: ' + esc(m.p.map(mName).join(', ') || '–') +
+      (m.s.length ? '<br><span class="dot s" style="margin-left:0"></span>Secondary: ' + esc(m.s.map(mName).join(', ')) : '') + '</div>';
+    return '<div class="card"><b>Muscles worked</b>' + bodySvg(v) + t + '</div>';
+  }
+  function sesMus(s) {
+    var tot = {}, i, j, m, n, max = 0, k, out = [];
+    for (i = 0; i < s.runs.length; i++) {
+      n = s.runs[i].sets.length; if (!n) continue;
+      m = musOf(s.runs[i].eid, s.runs[i].name);
+      for (j = 0; j < m.p.length; j++) tot[m.p[j]] = (tot[m.p[j]] || 0) + n;
+      for (j = 0; j < m.s.length; j++) tot[m.s[j]] = (tot[m.s[j]] || 0) + n * 0.5;
+    }
+    for (k in tot) if (tot.hasOwnProperty(k)) { out.push({ id: k, n: tot[k] }); if (tot[k] > max) max = tot[k]; }
+    out.sort(function (a, b) { return b.n - a.n; });
+    return { list: out, max: max };
+  }
+  function sesMusHtml(s) {
+    var r = sesMus(s), v = {}, i, h = '';
+    if (!r.list.length) return '';
+    for (i = 0; i < r.list.length; i++) v[r.list[i].id] = r.list[i].n / r.max;
+    h = '<h2>Muscles trained</h2><div class="card">' + bodySvg(v) + '<div class="mlist">';
+    for (i = 0; i < r.list.length; i++)
+      h += '<div class="row"><span>' + esc(mName(r.list[i].id)) + '</span><span><span class="mbar" style="width:' + Math.round(8 + 60 * r.list[i].n / r.max) + 'px"></span>' + (Math.round(r.list[i].n * 2) / 2) + '</span></div>';
+    return h + '</div><div class="mute" style="margin-top:8px">Sets per muscle. Sets where the muscle is a helper count half. Darker = trained more.</div></div>';
+  }
+  var nxMp = [], nxMs = [], mOpen = '';
+  function mChips(p, sec, attr) {
+    var h = '', i, c;
+    for (i = 0; i < MUS.length; i++) {
+      c = p.indexOf(MUS[i][0]) >= 0 ? ' p' : sec.indexOf(MUS[i][0]) >= 0 ? ' s' : '';
+      h += '<button class="mc' + c + '" data-a="' + attr[0] + '" ' + attr[1] + ' data-m="' + MUS[i][0] + '">' + MUS[i][1] + '</button>';
+    }
+    return h;
+  }
+  function mCycle(p, sec, m) {
+    if (p.indexOf(m) >= 0) { p.splice(p.indexOf(m), 1); sec.push(m); }
+    else if (sec.indexOf(m) >= 0) sec.splice(sec.indexOf(m), 1);
+    else p.push(m);
+  }
   function fix(d) {
     var i, j, f, bm = null;
     d.wu = d.wu || []; d.oth = d.oth || [];
+    for (i = 0; i < (d.ex || []).length; i++) {
+      f = d.ex[i];
+      if (f.mp === undefined && f.ms === undefined) { j = mDefault(f.name); if (j) { f.mp = j[1].slice(); f.ms = j[2].slice(); } }
+      else { f.mp = mClean(f.mp); f.ms = mClean(f.ms); }
+    }
     for (i = 0; i < (d.ex || []).length; i++) if (d.ex[i].lower === undefined && /^(assisted pull|incline push)/i.test(String(d.ex[i].name))) d.ex[i].lower = true;
     if (!d.wt) d.wt = [{ id: 'wt1', name: 'Build muscle' }, { id: 'wt2', name: 'CrossFit' }, { id: 'wt3', name: 'HIIT' }];
     for (i = 0; i < d.wt.length; i++) if (String(d.wt[i].name).toLowerCase() === 'build muscle') bm = d.wt[i];
@@ -410,7 +527,7 @@ svg{width:100%;height:auto;display:block}
     var a = analyze(s), i, sets = 0, mins = s.end ? Math.round((s.end - s.start) / 60000) : 0, w = s.warmups || [], h, r;
     for (i = 0; i < a.ex.length; i++) sets += a.ex[i].run.sets.length;
     h = sumHead(s, 'overview') + '<div class="card"><div class="stats c2">' + statc('dumb', a.ex.length, 'Exercises') + statc('layers', sets, 'Sets') + statc('bars', volOf(a) + ' kg', 'Volume') + statc('clock', mins > 0 ? mins + ' min' : '\u2013', 'Duration') + '</div></div>' +
-      '<h2>What you did</h2>';
+      sesMusHtml(s) + '<h2>What you did</h2>';
     for (i = 0; i < w.length; i++) h += tile('flame', 'Warm-up', esc(warmLine(w[i])), '', true);
     for (i = 0; i < a.ex.length; i++) { r = a.ex[i].run; h += tile('check', a.ex[i].name, r.sets.length + (r.sets.length === 1 ? ' set' : ' sets') + ' \u00b7 ' + esc(setsText(r.sets)), '', true); }
     return h + '<button class="full" data-a="closeSum">Close</button>';
@@ -483,6 +600,7 @@ svg{width:100%;height:auto;display:block}
         for (i = 0; i < n; i++) h += '<div>Set ' + run.sets[i].n + ': ' + setLong(run.sets[i]) + '</div>';
         h += '<button class="del full" data-a="undoSet">Remove last set</button></div>';
       }
+      h += exMusHtml(run);
     } else {
       var tr = byId(db.tr, s.tid), ids = tr ? tr.ex : [], doneIds = {}, openT = '', other = '', doneT = '', e, wl = s.warmups || [];
       for (i = 0; i < s.runs.length; i++) doneIds[s.runs[i].eid] = 1;
@@ -554,9 +672,12 @@ svg{width:100%;height:auto;display:block}
         '<label class="chk" style="margin:0"><input type="checkbox" data-lower="' + x.id + '"' + (x.lower ? ' checked' : '') + '>Lower weight is better</label></div>' +
         '<div class="two" style="grid-template-columns:1fr 1fr 1fr"><div><label>Break (sec)</label><input type="number" inputmode="numeric" data-rest="' + x.id + '" value="' + x.rest + '"></div>' +
         '<div><label>Rounds</label><input data-rounds="' + x.id + '" value="' + esc(x.rounds || '') + '" placeholder="3"></div>' +
-        '<div><label>Reps</label><input data-reps="' + x.id + '" value="' + esc(x.reps || '') + '" placeholder="8\u201312"></div></div></div>';
+        '<div><label>Reps</label><input data-reps="' + x.id + '" value="' + esc(x.reps || '') + '" placeholder="8\u201312"></div></div>' +
+        '<details style="margin-top:10px"' + (mOpen === x.id ? ' open' : '') + '><summary class="mute">Muscles: ' + esc(musOf(x.id).p.map(mName).concat(musOf(x.id).s.map(function (n) { return mName(n) + ' (helper)'; })).join(', ') || 'none set') + '</summary>' +
+        '<div class="mute" style="margin:6px 0">Tap once = main muscle, twice = helper, three times = off.</div>' + mChips(musOf(x.id).p, musOf(x.id).s, ['mCycle', 'data-id="' + x.id + '"']) + '</details></div>';
     }
     h += '<label>New exercise</label><input id="nxName" placeholder="Name"><label>Break (seconds)</label><input id="nxRest" type="number" inputmode="numeric" value="90"><div class="two"><div><label>Recommended rounds</label><input id="nxRounds" placeholder="3"></div><div><label>Recommended reps</label><input id="nxReps" placeholder="8\u201312"></div></div><label class="chk"><input type="checkbox" id="nxSides">Track left and right separately</label><label class="chk"><input type="checkbox" id="nxLower">Lower weight is better</label>' +
+      '<label>Muscles</label><div class="mute" style="margin-bottom:6px">Tap once = main muscle, twice = helper, three times = off.</div><div id="nxMus">' + mChips(nxMp, nxMs, ['nxM', '']) + '</div>' +
       '<button class="full" data-a="addEx">Add exercise</button></div><h2>Training types</h2><div class="card">';
     for (i = 0; i < db.tr.length; i++) h += '<div class="row" style="margin-bottom:8px"><div><b>' + esc(db.tr[i].name) + '</b><div class="mute">' +
       (wtName(db.tr[i].wt) ? esc(wtName(db.tr[i].wt)) + ' \u00b7 ' : '') + esc(db.tr[i].ex.map(function (id) { var e = byId(db.ex, id); return e ? e.name : '?'; }).join(', ')) + '</div></div><button class="del" data-a="delTr" data-id="' + db.tr[i].id + '">\u2715</button></div>';
@@ -651,9 +772,18 @@ svg{width:100%;height:auto;display:block}
       try { localStorage.setItem(KEY_COPY, String(Date.now())); } catch (e3) {}
     },
     undoSet: function () { activeRun(activeSes()).sets.pop(); },
+    mCycle: function (el) {
+      var e = byId(db.ex, el.getAttribute('data-id')), m = musOf(e.id);
+      e.mp = m.p; e.ms = m.s; mCycle(e.mp, e.ms, el.getAttribute('data-m')); mOpen = e.id;
+    },
+    nxM: function (el) {
+      var m = el.getAttribute('data-m'); mCycle(nxMp, nxMs, m);
+      el.className = 'mc' + (nxMp.indexOf(m) >= 0 ? ' p' : nxMs.indexOf(m) >= 0 ? ' s' : '');
+      return false;
+    },
     addEx: function () {
       var n = $('nxName').value.replace(/^\s+|\s+$/g, ''), r = parseInt($('nxRest').value, 10);
-      if (!n) { alert('Enter a name.'); return false; } db.ex.push({ id: uid(), name: n, rest: isNaN(r) ? 90 : r, sides: $('nxSides').checked, lower: $('nxLower').checked, rounds: $('nxRounds').value.replace(/^\s+|\s+$/g, ''), reps: $('nxReps').value.replace(/^\s+|\s+$/g, '') });
+      if (!n) { alert('Enter a name.'); return false; } db.ex.push({ id: uid(), name: n, mp: nxMp.slice(), ms: nxMs.slice(), rest: isNaN(r) ? 90 : r, sides: $('nxSides').checked, lower: $('nxLower').checked, rounds: $('nxRounds').value.replace(/^\s+|\s+$/g, ''), reps: $('nxReps').value.replace(/^\s+|\s+$/g, '') }); nxMp = []; nxMs = [];
     },
     delEx: function (el) { if (!confirm('Delete this exercise type? Past logs stay.')) return false; var id = el.getAttribute('data-id'); db.ex = db.ex.filter(function (e) { return e.id !== id; }); },
     addTr: function () {

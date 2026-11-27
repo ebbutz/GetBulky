@@ -1,4 +1,4 @@
-var CACHE = 'gymlog-v17';
+var CACHE = 'gymlog-v18';
 var FILES = ['./', 'index.html', 'manifest.webmanifest'];
 
 self.addEventListener('install', function (e) {
