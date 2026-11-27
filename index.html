@@ -10,7 +10,7 @@
 <title>Gym Log</title>
 <style>
 :root{--warn:#b45309;--hd:#1d3557;--ink:#1d2433;--bg:#eef1f5;--card:#fff;--line:#d5dbe4;--acc:#2455d6;--ok:#1f8a4c;--mute:#6b7585}
-@media (prefers-color-scheme:dark){:root{--warn:#f0a35c;--hd:#27395a;--ink:#e8ecf3;--bg:#12161f;--card:#1c222e;--line:#313a4b;--acc:#7da2ff;--ok:#4cc17f;--mute:#93a0b5}}
+@media (prefers-color-scheme:dark){#toast{color:#0b1f12}:root{--warn:#f0a35c;--hd:#27395a;--ink:#e8ecf3;--bg:#12161f;--card:#1c222e;--line:#313a4b;--acc:#7da2ff;--ok:#4cc17f;--mute:#93a0b5}}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,Helvetica,Arial,sans-serif}
 #app{padding:14px 14px 90px;max-width:560px;margin:0 auto}
@@ -27,6 +27,8 @@ button.full{width:100%;margin-top:10px}
 .two{display:grid;grid-template-columns:1fr 1fr;grid-gap:10px}
 .mute{color:var(--mute);font-size:14px}
 .timer{font-size:56px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;margin:4px 0}
+.timer.idle{color:var(--mute)}
+.timer.run{color:var(--acc)}
 .timer.done{color:var(--ok)}
 .sets div{padding:6px 0;border-top:1px solid var(--line)}
 .hd{display:flex;align-items:center;justify-content:space-between;background:var(--hd);color:#fff;margin:-14px -14px 16px;padding:16px 14px}
@@ -52,6 +54,11 @@ button.full{width:100%;margin-top:10px}
 .tile .tb b{display:block}
 .tile>button{margin-left:8px;flex:none}
 details>summary{cursor:pointer}
+button:active{opacity:.8;transform:scale(.98)}
+#toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ok);color:#fff;padding:11px 18px;border-radius:999px;font-weight:600;font-size:15px;opacity:0;pointer-events:none;transform:translateX(-50%) translateY(16px);transition:opacity .2s,transform .2s;z-index:20;max-width:90%;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@keyframes pop{0%{transform:scale(1.18)}100%{transform:scale(1)}}
+.timer.pop{animation:pop .35s ease-out}
 button:disabled{opacity:.45}
 .card.dirty{border:2px solid var(--warn)}
 .card.dirty textarea{border:2px solid var(--warn)}
@@ -71,6 +78,7 @@ svg{width:100%;height:auto;display:block}
 <body>
 <div id="app"></div>
 <div id="tabs"></div>
+<div id="toast"></div>
 <script>
 (function () {
   var KEY = 'gymlog.v1', KEY_COPY = 'gymlog.lastcopy', tab = 'train', db = load(), timerId = null;
@@ -142,7 +150,7 @@ svg{width:100%;height:auto;display:block}
     return '<h2>Warm-up</h2><div class="card"><label>Warm-up type</label>' + typeSel('wuType', db.wu, wuSel) +
       '<div class="two" style="grid-template-columns:1fr 1fr 1.4fr"><div><label>Min</label><input id="wuMin" type="number" inputmode="numeric" min="0"></div>' +
       '<div><label>Sec</label><input id="wuSec" type="number" inputmode="numeric" min="0" max="59"></div>' +
-      '<div><label>Distance (km)</label><input id="wuKm" type="number" inputmode="decimal" step="0.1" placeholder="optional"></div></div>' +
+      '<div><label>Distance (km)</label><input id="wuKm" type="text" inputmode="decimal" autocomplete="off" placeholder="optional"></div></div>' +
       '<button class="full sec" data-a="addWarm">Add warm-up</button></div>';
   }
   function otherHtml() {
@@ -413,12 +421,13 @@ svg{width:100%;height:auto;display:block}
       '<button data-a="finishSes">Finish</button></div>';
   }
   function lastCopyText() { var v = null; try { v = localStorage.getItem(KEY_COPY); } catch (e) {} return v ? fmtDate(parseInt(v, 10)) : 'never'; }
+  function num(v) { return parseFloat(String(v == null ? '' : v).replace(/\s/g, '').replace(',', '.')); }
   function logIt() {
-    var run = activeRun(activeSes()), w = parseFloat($('w').value), r = parseInt($('r').value, 10), set;
-    if (isNaN(w) || isNaN(r)) { alert('Enter weight and reps.'); return false; }
+    var run = activeRun(activeSes()), w = num($('w').value), r = parseInt($('r').value, 10), set;
+    if (isNaN(w) || isNaN(r)) { alert('Enter a weight (a comma or a point works) and the reps.'); return false; }
     set = { n: run.sets.length + 1, w: w, r: r, t: Date.now() };
     if (run.sides) {
-      var l = parseInt($('l').value, 10), wl = parseFloat($('wl').value);
+      var l = parseInt($('l').value, 10), wl = num($('wl').value);
       if (isNaN(l)) { alert('Enter reps for the left side.'); return false; }
       set.l = l;
       if (!isNaN(wl) && wl !== w) set.wl = wl;
@@ -439,10 +448,10 @@ svg{width:100%;height:auto;display:block}
   }
   function setsText(sets) { return sets.map(setTxt).join(', '); }
   function inputsHtml(run, last) {
-    var wf = '<label>Weight (kg)</label><input id="w" type="number" inputmode="decimal" step="0.5" value="' + last.w + '">';
+    var wf = '<label>Weight (kg)</label><input id="w" type="text" inputmode="decimal" autocomplete="off" value="' + last.w + '">';
     if (!run.sides) return '<div class="two"><div>' + wf + '</div><div><label>Reps</label><input id="r" type="number" inputmode="numeric" value="' + last.r + '"></div></div>';
     var wl = (last.wl != null && last.wl !== last.w) ? last.wl : '';
-    return '<div class="two"><div>' + wf + '</div><div><label>Left weight, if different</label><input id="wl" type="number" inputmode="decimal" step="0.5" value="' + wl + '"></div>' +
+    return '<div class="two"><div>' + wf + '</div><div><label>Left weight, if different</label><input id="wl" type="text" inputmode="decimal" autocomplete="off" value="' + wl + '"></div>' +
       '<div><label>Reps right</label><input id="r" type="number" inputmode="numeric" value="' + last.r + '"></div>' +
       '<div><label>Reps left</label><input id="l" type="number" inputmode="numeric" value="' + (last.l == null ? last.r : last.l) + '"></div></div>';
   }
@@ -468,7 +477,7 @@ svg{width:100%;height:auto;display:block}
         inputsHtml(run, last) +
         '<button class="full" data-a="logSet">Log set and start break</button>' +
         '<button class="full sec" data-a="logEnd">Log set and end exercise</button>' +
-        (n ? '<button class="del full" data-a="endRun">End without logging a set</button>' : '<button class="del full" data-a="cancelRun">Cancel exercise</button>') + '</div>';
+        '<button class="del full" data-a="cancelSet">Cancel set</button></div>';
       if (n) {
         h += '<div class="card sets">';
         for (i = 0; i < n; i++) h += '<div>Set ' + run.sets[i].n + ': ' + setLong(run.sets[i]) + '</div>';
@@ -585,16 +594,25 @@ svg{width:100%;height:auto;display:block}
     for (var i = 0; i < t.length; i++) h += '<button data-tab="' + t[i][0] + '"' + (tab === t[i][0] ? ' class="on"' : '') + '>' + t[i][1] + '</button>';
     $('tabs').innerHTML = h;
     bkSync();
+    if (popTimer) { popTimer = false; var tm = $('timer'); if (tm) { tick(); tm.className += ' pop'; } }
     if (needTop) { needTop = false; try { window.scrollTo(0, 0); } catch (e) {} }
     tick();
+  }
+  function setTimerClass(el, c) { if (el.className.indexOf(c) !== 0) el.className = c; }
+  var toastT = null, popTimer = false;
+  function toast(msg) {
+    var t = $('toast'); if (!t) return;
+    t.textContent = msg; t.className = 'show';
+    if (toastT) clearTimeout(toastT);
+    toastT = setTimeout(function () { t.className = ''; }, 2200);
   }
   function tick() {
     var el = $('timer'); if (!el) return;
     var run = activeRun(activeSes()); if (!run) return;
     var n = run.sets.length, note = $('timerNote');
-    if (!n) { el.className = 'timer'; el.textContent = mmss(run.rest); note.textContent = 'Recommended break'; return; }
+    if (!n) { setTimerClass(el, 'timer idle'); el.textContent = mmss(run.rest); note.textContent = 'Break starts after you log a set \u00b7 recommended ' + mmss(run.rest); return; }
     var left = run.rest - (Date.now() - run.sets[n - 1].t) / 1000;
-    el.textContent = mmss(left); el.className = 'timer' + (left <= 0 ? ' done' : '');
+    el.textContent = mmss(left); setTimerClass(el, left <= 0 ? 'timer done' : 'timer run');
     note.textContent = left <= 0 ? 'Break over \u2013 ready for the next set' : 'Break (recommended ' + mmss(run.rest) + ')';
   }
   setInterval(tick, 500);
@@ -611,10 +629,16 @@ svg{width:100%;height:auto;display:block}
     sumOverview: function () { sumMode = 'overview'; needTop = true; },
     closeSum: function () { sumId = null; needTop = true; },
     startRun: function (el) { var s = activeSes(), e = byId(db.ex, el.getAttribute('data-id')); endRun(s); s.runs.push({ id: uid(), eid: e.id, name: e.name, rest: e.rest, sides: !!e.sides, rounds: e.rounds || '', reps: e.reps || '', start: Date.now(), end: null, sets: [] }); },
-    endRun: function () { endRun(activeSes()); },
-    logSet: function () { return logIt(); },
-    logEnd: function () { if (logIt() === false) return false; endRun(activeSes()); },
-    cancelRun: function () { var s = activeSes(); s.runs = s.runs.filter(function (r) { return r.end; }); },
+    logSet: function () {
+      if (logIt() === false) return false;
+      var run = activeRun(activeSes()), x = run.sets[run.sets.length - 1];
+      popTimer = true; toast('\u2713 Set ' + x.n + ' logged \u00b7 ' + setTxt(x) + ' \u00b7 break started');
+    },
+    logEnd: function () { if (logIt() === false) return false; var run = activeRun(activeSes()), x = run.sets[run.sets.length - 1]; endRun(activeSes()); toast('\u2713 Set ' + x.n + ' logged \u00b7 ' + run.name + ' done'); },
+    cancelSet: function () {
+      var s = activeSes(), run = activeRun(s);
+      if (run && !run.sets.length) s.runs = s.runs.filter(function (r) { return r !== run; }); else endRun(s);
+    },
     delRun: function (el) {
       if (!confirm('Remove this exercise and its sets from the training?')) return false;
       var s = activeSes(), id = el.getAttribute('data-id'); s.runs = s.runs.filter(function (r) { return r.id !== id; });
@@ -641,7 +665,7 @@ svg{width:100%;height:auto;display:block}
     delTr: function (el) { if (!confirm('Delete this training type? Past logs stay.')) return false; var id = el.getAttribute('data-id'); db.tr = db.tr.filter(function (t) { return t.id !== id; }); },
     addWarm: function () {
       var s = activeSes(), ty = byId(db.wu, $('wuType').value), mi = parseInt($('wuMin').value, 10), se = parseInt($('wuSec').value, 10),
-        km = parseFloat($('wuKm').value), sec, e;
+        km = num($('wuKm').value), sec, e;
       mi = isNaN(mi) ? 0 : mi; se = isNaN(se) ? 0 : se; sec = mi * 60 + se;
       if (!ty) { alert('Select a warm-up type.'); return false; }
       if (mi < 0 || se < 0 || se > 59 || sec <= 0) { alert('Enter a duration in minutes and seconds (seconds from 0 to 59).'); return false; }
