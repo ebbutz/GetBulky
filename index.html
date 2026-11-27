@@ -9,8 +9,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <title>Gym Log</title>
 <style>
-:root{--hd:#1d3557;--ink:#1d2433;--bg:#eef1f5;--card:#fff;--line:#d5dbe4;--acc:#2455d6;--ok:#1f8a4c;--mute:#6b7585}
-@media (prefers-color-scheme:dark){:root{--hd:#27395a;--ink:#e8ecf3;--bg:#12161f;--card:#1c222e;--line:#313a4b;--acc:#7da2ff;--ok:#4cc17f;--mute:#93a0b5}}
+:root{--warn:#b45309;--hd:#1d3557;--ink:#1d2433;--bg:#eef1f5;--card:#fff;--line:#d5dbe4;--acc:#2455d6;--ok:#1f8a4c;--mute:#6b7585}
+@media (prefers-color-scheme:dark){:root{--warn:#f0a35c;--hd:#27395a;--ink:#e8ecf3;--bg:#12161f;--card:#1c222e;--line:#313a4b;--acc:#7da2ff;--ok:#4cc17f;--mute:#93a0b5}}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,Helvetica,Arial,sans-serif}
 #app{padding:14px 14px 90px;max-width:560px;margin:0 auto}
@@ -33,9 +33,21 @@ button.full{width:100%;margin-top:10px}
 .hd b{display:block;font-size:20px}
 .hd span{font-size:13px;opacity:.8}
 .hd button{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.75);flex:none;margin-left:10px}
+.seg{display:flex;margin:0 0 14px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
+.seg button{flex:1;background:transparent;color:var(--mute);border-radius:0;padding:11px 0}
+.seg button.on{background:var(--hd);color:#fff}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);grid-gap:16px 8px}
+.stats.c2{grid-template-columns:1fr 1fr}
+.st .sv{display:flex;align-items:center}
+.st .sv svg{flex:none;width:20px;height:20px;margin-right:6px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;color:var(--mute)}
+.st .sv b{font-size:20px;white-space:nowrap}
+.st .sl{font-size:13px;color:var(--mute);margin-top:2px}
+.st.pos svg{color:var(--ok)}
+.st.neg svg{color:var(--warn)}
 .tile{display:flex;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
 .tile .ico{flex:none;width:38px;height:38px;border-radius:9px;background:var(--bg);color:var(--acc);display:flex;align-items:center;justify-content:center;margin-right:12px}
 .tile.done .ico{color:var(--ok)}
+.tile.warn .ico{color:var(--warn)}
 .tile .tb{flex:1;min-width:0}
 .tile .tb b{display:block}
 .tile>button{margin-left:8px;flex:none}
@@ -80,17 +92,19 @@ svg{width:100%;height:auto;display:block}
   function activeSes() { for (var i = 0; i < db.ses.length; i++) if (!db.ses[i].end) return db.ses[i]; return null; }
   function activeRun(s) { if (!s) return null; for (var i = 0; i < s.runs.length; i++) if (!s.runs[i].end) return s.runs[i]; return null; }
   function endRun(s) { var r = activeRun(s); if (r) r.end = Date.now(); }
-  function lastSets(eid, skipSes) {
+  function lastSets(eid, skipSes) { var r = lastRun(eid, skipSes); return r ? r.sets : null; }
+  function lastRun(eid, skipSes) {
     for (var i = db.ses.length - 1; i >= 0; i--) {
       if (db.ses[i] === skipSes) continue;
-      for (var j = db.ses[i].runs.length - 1; j >= 0; j--) if (db.ses[i].runs[j].eid === eid && db.ses[i].runs[j].sets.length) return db.ses[i].runs[j].sets;
+      for (var j = db.ses[i].runs.length - 1; j >= 0; j--) if (db.ses[i].runs[j].eid === eid && db.ses[i].runs[j].sets.length) return db.ses[i].runs[j];
     }
     return null;
   }
-  var owSel = '', wuSel = '', actLimit = 3;
+  var owSel = '', wuSel = '', actLimit = 3, sumId = null, sumMode = 'trends', needTop = false;
   function fix(d) {
     var i, j, f, bm = null;
     d.wu = d.wu || []; d.oth = d.oth || [];
+    for (i = 0; i < (d.ex || []).length; i++) if (d.ex[i].lower === undefined && /^(assisted pull|incline push)/i.test(String(d.ex[i].name))) d.ex[i].lower = true;
     if (!d.wt) d.wt = [{ id: 'wt1', name: 'Build muscle' }, { id: 'wt2', name: 'CrossFit' }, { id: 'wt3', name: 'HIIT' }];
     for (i = 0; i < d.wt.length; i++) if (String(d.wt[i].name).toLowerCase() === 'build muscle') bm = d.wt[i];
     for (i = 0; i < d.tr.length; i++) if (!d.tr[i].wt && bm) d.tr[i].wt = bm.id;
@@ -146,8 +160,9 @@ svg{width:100%;height:auto;display:block}
       if (items[i].s) {
         x = items[i].s;
         var mins = Math.round((x.end - x.start) / 60000);
-        h += '<div class="card"><b>' + esc(x.name) + '</b><div class="mute">' + (x.wtName ? esc(x.wtName) + ' \u00b7 ' : '') + fmtDate(x.start) + (mins > 0 ? ' \u00b7 ' + mins + ' min' : '') + '</div>' +
-          (x.warmups && x.warmups.length ? '<div class="mute">Warm-up: ' + esc(warmText(x.warmups)) + '</div>' : '') + '</div>';
+        h += '<div class="card row"><div><b>' + esc(x.name) + '</b><div class="mute">' + (x.wtName ? esc(x.wtName) + ' \u00b7 ' : '') + fmtDate(x.start) + (mins > 0 ? ' \u00b7 ' + mins + ' min' : '') + '</div>' +
+          (x.warmups && x.warmups.length ? '<div class="mute">Warm-up: ' + esc(warmText(x.warmups)) + '</div>' : '') + '</div>' +
+          (isBM(x) ? '<button class="sec" data-a="openSum" data-id="' + x.id + '">Overview</button>' : '') + '</div>';
       } else {
         x = items[i].o;
         h += '<div class="card row"><div><b>' + esc(x.name) + '</b><div class="mute">' + fmtDate(x.start) + (x.min ? ' \u00b7 ' + x.min + ' min' : '') + '</div></div>' +
@@ -181,8 +196,17 @@ svg{width:100%;height:auto;display:block}
     check: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>',
     flame: '<path d="M12 3c.6 3 4 4.6 4 8.6a4 4 0 0 1-8 0c0-1.6.7-2.8 1.6-3.7C9.6 9.6 11.3 8 12 3z"/>'
   };
+  ICO.up = '<path d="M12 19V5M5 12l7-7 7 7"/>';
+  ICO.down = '<path d="M12 5v14M5 12l7 7 7-7"/>';
+  ICO.flat = '<path d="M5 12h14"/>';
+  ICO.trend = '<path d="M3 17l6-6 4 4 8-8M15 7h6v6"/>';
+  ICO.trophy = '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3"/>';
+  ICO.target = '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>';
+  ICO.bars = '<path d="M5 20V10M12 20V4M19 20v-7"/>';
+  ICO.clock = '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>';
+  ICO.layers = '<path d="M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5"/>';
   function tile(k, title, sub, btn, done) {
-    return '<div class="tile' + (done ? ' done' : '') + '"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICO[k] +
+    return '<div class="tile' + (done ? ' ' + (done === true ? 'done' : done) : '') + '"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICO[k] +
       '</svg></span><div class="tb"><b>' + esc(title) + '</b><div class="mute">' + sub + '</div></div>' + (btn || '') + '</div>';
   }
   function exCard(e) {
@@ -193,6 +217,191 @@ svg{width:100%;height:auto;display:block}
     return tile('check', r.name, n ? n + (n === 1 ? ' set' : ' sets') + ' \u00b7 ' + esc(setsText(r.sets)) : 'No sets logged', '<button class="del" data-a="delRun" data-id="' + r.id + '">\u2715</button>', true);
   }
   function warmTile(w) { return tile('flame', 'Warm-up', esc(warmLine(w)), '<button class="del" data-a="delWarm" data-id="' + w.id + '">\u2715</button>', true); }
+  /* ---------- training summary ---------- */
+  function isBM(x) { return String(x.wtName || '').toLowerCase() === 'build muscle'; }
+  function nf(x) { return Math.round(x * 100) / 100; }
+  function firstNum(t) { var m = /\d+/.exec(String(t || '')); return m ? parseInt(m[0], 10) : null; }
+  function lowerEx(eid) { var e = byId(db.ex, eid); return !!(e && e.lower); }
+  function better(a, b, lower) { return lower ? a < b : a > b; }
+  function pairs(x) { var a = [[x.w, x.r]]; if (x.l != null) a.push([x.wl != null ? x.wl : x.w, x.l]); return a; }
+  function sRun(ses, eid) {
+    var out = null, i, j, r;
+    for (i = 0; i < ses.runs.length; i++) {
+      r = ses.runs[i];
+      if (r.eid !== eid || !r.sets.length) continue;
+      if (!out) out = { name: r.name, sets: [], rounds: r.rounds || '', reps: r.reps || '', rate: null };
+      for (j = 0; j < r.sets.length; j++) out.sets.push(r.sets[j]);
+      if (r.rate) out.rate = r.rate;
+    }
+    return out;
+  }
+  function metrics(run, lower) {
+    var best = null, vol = 0, reps = 0, top = 0, i, j, p, hit;
+    for (i = 0; i < run.sets.length; i++) {
+      p = pairs(run.sets[i]);
+      for (j = 0; j < p.length; j++) {
+        reps += p[j][1]; vol += p[j][0] * p[j][1];
+        if (lower && p[j][0] <= 0) continue;
+        if (best === null || better(p[j][0], best, lower)) best = p[j][0];
+      }
+    }
+    for (i = 0; i < run.sets.length; i++) {
+      p = pairs(run.sets[i]); hit = false;
+      for (j = 0; j < p.length; j++) if (p[j][0] === best) hit = true;
+      if (hit) top++;
+    }
+    return { best: best, vol: Math.round(vol), reps: reps, top: top, n: run.sets.length, load: lower ? reps : Math.round(vol) };
+  }
+  function e1rm(run) {
+    var m = 0, i, j, p;
+    for (i = 0; i < run.sets.length; i++) { p = pairs(run.sets[i]); for (j = 0; j < p.length; j++) if (p[j][0] > 0 && p[j][0] * (1 + p[j][1] / 30) > m) m = p[j][0] * (1 + p[j][1] / 30); }
+    return m;
+  }
+  function history(eid, s) {
+    var list = [], lower = lowerEx(eid), idx = db.ses.indexOf(s), i, r;
+    for (i = 0; i < db.ses.length; i++) {
+      if (db.ses[i] !== s && (db.ses[i].start > s.start || (db.ses[i].start === s.start && i > idx))) continue;
+      r = sRun(db.ses[i], eid);
+      if (r) list.push({ s: db.ses[i], run: r, m: metrics(r, lower), t: db.ses[i].start, i: i });
+    }
+    list.sort(function (a, b) { return a.t - b.t || a.i - b.i; });
+    return list;
+  }
+  function dtxt(from, to) {
+    var up = to >= from, t = '(' + (up ? '+' : '\u2212') + nf(Math.abs(to - from)) + ' kg';
+    if (from > 0) t += ', ' + (up ? '+' : '\u2212') + Math.round(Math.abs(to - from) / from * 100) + '%';
+    return t + ')';
+  }
+  function gainPct(from, to, lower) { return from > 0 ? (lower ? from - to : to - from) / from * 100 : null; }
+  function fmtPct(x) { return x === null ? '\u2013' : (Math.round(Math.abs(x)) === 0 ? '0%' : (x < 0 ? '\u2212' : '+') + Math.round(Math.abs(x)) + '%'); }
+  function avg(a) { var i, t = 0; if (!a.length) return null; for (i = 0; i < a.length; i++) t += a[i]; return t / a.length; }
+  function pctTxt(p) { return p === null ? '' : ' (' + (p >= 0 ? '+' : '\u2212') + Math.round(Math.abs(p)) + '%)'; }
+  function volCmp(f, c, lower) {
+    var useReps = lower || (f.m.vol === 0 && c.m.vol === 0), a = useReps ? f.m.reps : f.m.vol, b = useReps ? c.m.reps : c.m.vol, pct = a > 0 ? (b - a) / a * 100 : null, dir;
+    if (a === 0) dir = b > 0 ? 1 : 0; else dir = Math.abs(pct) < 2 ? 0 : (pct > 0 ? 1 : -1);
+    return { dir: dir, pct: pct, a: a, b: b, unit: useReps ? ' reps' : ' kg' };
+  }
+  function analyzeEx(eid, s, out) {
+    var lower = lowerEx(eid), h = history(eid, s), k = -1, i, j, d, g, cur, prev, name, win, f, c, wd, vc, cand, earlier, eb, ex, rmin, tmin, rtxt, low, mr, p, mx, gain, gw, gp, e1c, e1e, hit, miss = false;
+    for (i = 0; i < h.length; i++) if (h[i].s === s) k = i;
+    if (k < 0) return;
+    h = h.slice(0, k + 1); cur = h[k]; prev = k > 0 ? h[k - 1] : null; name = cur.run.name;
+    out.ex.push({ name: name, run: cur.run, m: cur.m, lower: lower });
+    // gains, stalls and losses: always the last 3 trainings of this exercise (now compared with two trainings ago)
+    win = h.slice(-3);
+    if (win.length === 3 && win[0].m.best !== null && win[1].m.best !== null && win[2].m.best !== null) {
+      f = win[0]; c = win[2]; out.elig++;
+      g = gainPct(f.m.best, c.m.best, lower); vc = volCmp(f, c, lower);
+      if (g !== null) out.pcts.push(g);
+      if (vc.pct !== null) out.pctsV.push(vc.pct);
+      cand = g !== null && g > 0 ? g : (vc.pct !== null && vc.pct > 0 ? vc.pct : null);
+      if (cand !== null && (!out.top || cand > out.top.g)) out.top = { name: name, g: cand };
+      wd = better(c.m.best, f.m.best, lower) ? 1 : (better(f.m.best, c.m.best, lower) ? -1 : 0);
+      if (wd > 0) out.gw.push(name + ': ' + nf(f.m.best) + ' \u2192 ' + nf(c.m.best) + ' kg ' + dtxt(f.m.best, c.m.best));
+      else if (wd < 0) out.lw.push(name + ': ' + nf(f.m.best) + ' \u2192 ' + nf(c.m.best) + ' kg ' + dtxt(f.m.best, c.m.best));
+      else out.sw.push(name + ': ' + nf(c.m.best) + ' kg for 3 trainings');
+      if (vc.dir > 0) out.gv.push(name + ': ' + vc.a + ' \u2192 ' + vc.b + vc.unit + pctTxt(vc.pct));
+      else if (vc.dir < 0) out.lv.push(name + ': ' + vc.a + ' \u2192 ' + vc.b + vc.unit + pctTxt(vc.pct));
+      else out.sv.push(name + ': ' + vc.b + vc.unit + ' (unchanged)');
+      if (wd > 0 || vc.dir > 0) out.gainN++;
+      if (wd === 0 || vc.dir === 0) out.stallN++;
+      if (wd < 0 || vc.dir < 0) { out.lossN++; out.lossNames.push(name); }
+      if (wd === 0 && vc.dir === 0) out.stNames.push(name);
+    } else out.need++;
+    // personal records
+    if (prev) {
+      hit = false; earlier = h.slice(0, k); eb = null;
+      for (i = 0; i < earlier.length; i++) if (earlier[i].m.best !== null && (eb === null || better(earlier[i].m.best, eb, lower))) eb = earlier[i].m.best;
+      if (cur.m.best !== null && eb !== null && better(cur.m.best, eb, lower)) { out.prw.push(name + ': ' + nf(cur.m.best) + ' kg (before ' + nf(eb) + ')'); hit = true; }
+      if (!lower) {
+        e1c = e1rm(cur.run); e1e = 0;
+        for (i = 0; i < earlier.length; i++) if (e1rm(earlier[i].run) > e1e) e1e = e1rm(earlier[i].run);
+        if (e1e > 0 && e1c > e1e + 0.05) { out.pre.push(name + ': ' + (Math.round(e1c * 10) / 10) + ' kg'); hit = true; }
+      }
+      mx = {};
+      for (i = 0; i < earlier.length; i++) for (j = 0; j < earlier[i].run.sets.length; j++) { p = pairs(earlier[i].run.sets[j]); for (d = 0; d < p.length; d++) if (mx[p[d][0]] === undefined || p[d][1] > mx[p[d][0]]) mx[p[d][0]] = p[d][1]; }
+      gain = 0; gw = null; gp = 0;
+      for (j = 0; j < cur.run.sets.length; j++) { p = pairs(cur.run.sets[j]); for (d = 0; d < p.length; d++) if (mx[p[d][0]] !== undefined && p[d][1] - mx[p[d][0]] > gain) { gain = p[d][1] - mx[p[d][0]]; gw = p[d][0]; gp = mx[p[d][0]]; } }
+      if (gain > 0 && !(lower && gw <= 0)) { out.prr.push(name + ': ' + (gp + gain) + ' reps at ' + nf(gw) + ' kg (before ' + gp + ')'); hit = true; }
+      if (hit) out.prN++;
+    }
+    // missed targets
+    ex = byId(db.ex, eid);
+    rmin = firstNum(cur.run.rounds); tmin = firstNum(cur.run.reps);
+    if (rmin === null && ex) rmin = firstNum(ex.rounds);
+    if (tmin === null && ex) tmin = firstNum(ex.reps);
+    rtxt = cur.run.reps || (ex && ex.reps) || '';
+    if (rmin !== null && cur.run.sets.length < rmin) { out.mr.push(name + ': ' + cur.run.sets.length + ' of ' + rmin + ' rounds'); miss = true; }
+    if (tmin !== null) {
+      low = [];
+      for (i = 0; i < cur.run.sets.length; i++) { mr = cur.run.sets[i].l != null ? Math.min(cur.run.sets[i].r, cur.run.sets[i].l) : cur.run.sets[i].r; if (mr < tmin) low.push('set ' + (i + 1) + ': ' + mr + ' reps'); }
+      if (low.length) { out.mp.push(name + ': ' + low.join(', ') + ' (target ' + rtxt + ')'); miss = true; }
+    }
+    if (miss) out.missN++;
+  }
+  function analyze(s) {
+    var out = { ex: [], gw: [], gv: [], sw: [], sv: [], lw: [], lv: [], prw: [], pre: [], prr: [], prN: 0, mr: [], mp: [], missN: 0, gainN: 0, stallN: 0, lossN: 0, pcts: [], pctsV: [], elig: 0, need: 0, top: null, lossNames: [], stNames: [] }, seen = {}, eids = [], i;
+    for (i = 0; i < s.runs.length; i++) if (s.runs[i].sets.length && !seen[s.runs[i].eid]) { seen[s.runs[i].eid] = 1; eids.push(s.runs[i].eid); }
+    for (i = 0; i < eids.length; i++) analyzeEx(eids[i], s, out);
+    return out;
+  }
+  function volOf(a) { var i, v = 0; for (i = 0; i < a.ex.length; i++) if (!a.ex[i].lower) v += a.ex[i].m.vol; return v; }
+  function nameList(n) { return n.length <= 2 ? n.join(' and ') : n[0] + ', ' + n[1] + ' and ' + (n.length - 2) + ' more'; }
+  function cheer(a) {
+    var gains = a.gainN, n = a.elig, t, ex = n === 1 ? ' exercise' : ' exercises';
+    if (!n) return 'Another training in the books \u2013 great job showing up! Trends appear as soon as an exercise has three trainings behind it.';
+    if (gains > 0 && gains * 2 >= n) t = 'Strong work! ' + gains + ' of ' + n + ex + ' moved forward over your last 3 trainings.';
+    else if (gains > 0) t = 'Nice progress! ' + gains + ' of ' + n + ex + ' moved forward over your last 3 trainings.';
+    else t = 'Solid, steady work \u2013 three trainings in a row is what builds results.';
+    if (a.top) t += ' ' + a.top.name + ' improved the most (' + Math.max(1, Math.round(a.top.g)) + '%).';
+    if (a.prN) t += ' You also set ' + a.prN + (a.prN === 1 ? ' personal record.' : ' personal records.');
+    if (a.lossNames.length) t += ' A dip in ' + nameList(a.lossNames) + ' happens to everyone \u2013 rest and consistency will bring it back.';
+    else if (a.stNames.length) t += ' ' + nameList(a.stNames) + ' held steady \u2013 one extra rep or a small weight step will get things moving again.';
+    return t;
+  }
+  function catTile(icon, title, cls, groups) {
+    var h = '', i, j, g;
+    for (i = 0; i < groups.length; i++) {
+      g = groups[i];
+      if (!g.lines.length) continue;
+      h += '<div style="margin-top:6px"><span style="font-weight:600;color:var(--ink)">' + g.label + ' (' + g.lines.length + ')</span>';
+      for (j = 0; j < g.lines.length; j++) h += '<br>' + esc(g.lines[j]);
+      h += '</div>';
+    }
+    return h ? tile(icon, title, h, '', cls) : '';
+  }
+  function statc(icon, v, l, cls) {
+    return '<div class="st ' + (cls || '') + '"><div class="sv"><svg viewBox="0 0 24 24">' + ICO[icon] + '</svg><b>' + v + '</b></div><div class="sl">' + l + '</div></div>';
+  }
+  function sgn(x) { return x === null ? '' : (x > 0.5 ? 'pos' : (x < -0.5 ? 'neg' : '')); }
+  function sumHead(s, mode) {
+    return '<div class="hd"><div><b>Training summary</b><span>' + esc(s.name) + ' \u00b7 ' + fmtDate(s.start) + '</span></div><button data-a="closeSum">Close</button></div>' +
+      '<div class="seg"><button class="' + (mode === 'overview' ? 'on' : '') + '" data-a="sumOverview">Overview</button><button class="' + (mode === 'trends' ? 'on' : '') + '" data-a="sumTrends">Trends</button></div>';
+  }
+  function sumTrendsHtml(s) {
+    var a = analyze(s), wA = avg(a.pcts), vA = avg(a.pctsV), pos, neg, h;
+    h = sumHead(s, 'trends') + '<div class="card"><div>' + esc(cheer(a)) + '</div><div class="stats" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">' +
+      statc('up', a.elig ? a.gainN + ' of ' + a.elig : '\u2013', 'Gains', a.gainN ? 'pos' : '') + statc('trophy', a.prN, 'Records', a.prN ? 'pos' : '') + statc('dumb', fmtPct(wA), 'Weight change', sgn(wA)) +
+      statc('flat', a.stallN, 'Stalls', a.stallN ? 'neg' : '') + statc('target', a.missN, 'Missed targets', a.missN ? 'neg' : '') + statc('bars', fmtPct(vA), 'Volume change', sgn(vA)) + '</div>' +
+      '<div class="mute" style="margin-top:12px;font-size:12px">Gains, stalls and changes compare now with two trainings ago (3 trainings in total).' +
+      (a.need ? ' ' + a.need + (a.need === 1 ? ' exercise needs' : ' exercises need') + ' 3 trainings with a recorded weight first.' : '') + '</div></div>';
+    pos = catTile('up', 'Gains', true, [{ label: 'Weight', lines: a.gw }, { label: 'Volume', lines: a.gv }]) +
+      catTile('trophy', 'Records', true, [{ label: 'Heaviest weight', lines: a.prw }, { label: 'Estimated 1RM', lines: a.pre }, { label: 'Most reps at a weight', lines: a.prr }]);
+    neg = catTile('flat', 'Stalls', false, [{ label: 'Weight', lines: a.sw }, { label: 'Volume', lines: a.sv }]) +
+      catTile('down', 'Losses', false, [{ label: 'Weight', lines: a.lw }, { label: 'Volume', lines: a.lv }]) +
+      catTile('target', 'Missed targets', false, [{ label: 'Rounds', lines: a.mr }, { label: 'Reps', lines: a.mp }]);
+    return h + (pos ? '<h2>Positives</h2>' + pos : '') + (neg ? '<h2>Negatives</h2>' + neg : '') + '<button class="full" data-a="closeSum">Close</button>';
+  }
+  function sumOverviewHtml(s) {
+    var a = analyze(s), i, sets = 0, mins = s.end ? Math.round((s.end - s.start) / 60000) : 0, w = s.warmups || [], h, r;
+    for (i = 0; i < a.ex.length; i++) sets += a.ex[i].run.sets.length;
+    h = sumHead(s, 'overview') + '<div class="card"><div class="stats c2">' + statc('dumb', a.ex.length, 'Exercises') + statc('layers', sets, 'Sets') + statc('bars', volOf(a) + ' kg', 'Volume') + statc('clock', mins > 0 ? mins + ' min' : '\u2013', 'Duration') + '</div></div>' +
+      '<h2>What you did</h2>';
+    for (i = 0; i < w.length; i++) h += tile('flame', 'Warm-up', esc(warmLine(w[i])), '', true);
+    for (i = 0; i < a.ex.length; i++) { r = a.ex[i].run; h += tile('check', a.ex[i].name, r.sets.length + (r.sets.length === 1 ? ' set' : ' sets') + ' \u00b7 ' + esc(setsText(r.sets)), '', true); }
+    return h + '<button class="full" data-a="closeSum">Close</button>';
+  }
+  function sumHtml(s) { return sumMode === 'overview' ? sumOverviewHtml(s) : sumTrendsHtml(s); }
   function banner(s) {
     return '<div class="hd"><div><b>' + esc(s.name) + '</b><span>' + (s.wtName ? esc(s.wtName) + ' \u00b7 ' : '') + 'Started ' + fmtDate(s.start) + '</span></div>' +
       '<button data-a="finishSes">Finish</button></div>';
@@ -246,7 +455,7 @@ svg{width:100%;height:auto;display:block}
     }
     var run = activeRun(s);
     if (run) {
-      var prev = lastSets(run.eid, s), n = run.sets.length, last = n ? run.sets[n - 1] : (prev ? prev[0] : { w: '', r: '' });
+      var pr = lastRun(run.eid, s), prev = pr ? pr.sets : null, n = run.sets.length, last = n ? run.sets[n - 1] : (prev ? prev[0] : { w: '', r: '' });
       h += '<div class="card"><div class="row"><b>' + esc(run.name) + '</b><span class="mute">Set ' + (n + 1) + (run.rounds ? ' of ' + run.rounds : '') + '</span></div>' + (rec(run) ? '<div class="mute">Recommended ' + rec(run) + '</div>' : '') +
         (prev ? '<div class="mute">Last time: ' + esc(setsText(prev)) + '</div>' : '') +
         '<div class="timer" id="timer"></div><div class="mute" style="text-align:center" id="timerNote"></div>' +
@@ -325,13 +534,14 @@ svg{width:100%;height:auto;display:block}
     for (i = 0; i < db.ex.length; i++) {
       var x = db.ex[i];
       h += '<div style="margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--line)"><div class="row"><b style="flex:1">' + esc(x.name) + '</b>' +
-        '<label class="chk" style="margin:0"><input type="checkbox" data-sides="' + x.id + '"' + (x.sides ? ' checked' : '') + '>L/R</label>' +
         '<button class="del" data-a="delEx" data-id="' + x.id + '">\u2715</button></div>' +
+        '<div><label class="chk" style="margin:0 14px 0 0"><input type="checkbox" data-sides="' + x.id + '"' + (x.sides ? ' checked' : '') + '>L/R</label>' +
+        '<label class="chk" style="margin:0"><input type="checkbox" data-lower="' + x.id + '"' + (x.lower ? ' checked' : '') + '>Lower weight is better</label></div>' +
         '<div class="two" style="grid-template-columns:1fr 1fr 1fr"><div><label>Break (sec)</label><input type="number" inputmode="numeric" data-rest="' + x.id + '" value="' + x.rest + '"></div>' +
         '<div><label>Rounds</label><input data-rounds="' + x.id + '" value="' + esc(x.rounds || '') + '" placeholder="3"></div>' +
         '<div><label>Reps</label><input data-reps="' + x.id + '" value="' + esc(x.reps || '') + '" placeholder="8\u201312"></div></div></div>';
     }
-    h += '<label>New exercise</label><input id="nxName" placeholder="Name"><label>Break (seconds)</label><input id="nxRest" type="number" inputmode="numeric" value="90"><div class="two"><div><label>Recommended rounds</label><input id="nxRounds" placeholder="3"></div><div><label>Recommended reps</label><input id="nxReps" placeholder="8\u201312"></div></div><label class="chk"><input type="checkbox" id="nxSides">Track left and right separately</label>' +
+    h += '<label>New exercise</label><input id="nxName" placeholder="Name"><label>Break (seconds)</label><input id="nxRest" type="number" inputmode="numeric" value="90"><div class="two"><div><label>Recommended rounds</label><input id="nxRounds" placeholder="3"></div><div><label>Recommended reps</label><input id="nxReps" placeholder="8\u201312"></div></div><label class="chk"><input type="checkbox" id="nxSides">Track left and right separately</label><label class="chk"><input type="checkbox" id="nxLower">Lower weight is better</label>' +
       '<button class="full" data-a="addEx">Add exercise</button></div><h2>Training types</h2><div class="card">';
     for (i = 0; i < db.tr.length; i++) h += '<div class="row" style="margin-bottom:8px"><div><b>' + esc(db.tr[i].name) + '</b><div class="mute">' +
       (wtName(db.tr[i].wt) ? esc(wtName(db.tr[i].wt)) + ' \u00b7 ' : '') + esc(db.tr[i].ex.map(function (id) { var e = byId(db.ex, id); return e ? e.name : '?'; }).join(', ')) + '</div></div><button class="del" data-a="delTr" data-id="' + db.tr[i].id + '">\u2715</button></div>';
@@ -344,10 +554,11 @@ svg{width:100%;height:auto;display:block}
 
   /* ---------- render and timer ---------- */
   function render() {
-    $('app').innerHTML = tab === 'train' ? trainView() : tab === 'progress' ? progressView() : setupView();
+    $('app').innerHTML = tab === 'train' ? (sumId && byId(db.ses, sumId) ? sumHtml(byId(db.ses, sumId)) : trainView()) : tab === 'progress' ? progressView() : setupView();
     var t = [['train', 'Train'], ['progress', 'Progress'], ['setup', 'Setup']], h = '';
     for (var i = 0; i < t.length; i++) h += '<button data-tab="' + t[i][0] + '"' + (tab === t[i][0] ? ' class="on"' : '') + '>' + t[i][1] + '</button>';
     $('tabs').innerHTML = h;
+    if (needTop) { needTop = false; try { window.scrollTo(0, 0); } catch (e) {} }
     tick();
   }
   function tick() {
@@ -365,9 +576,13 @@ svg{width:100%;height:auto;display:block}
   var A = {
     startSes: function () {
       var tr = byId(db.tr, $('trSel').value), v = $('trStart').value, t = v ? new Date(v).getTime() : Date.now();
-      db.ses.push({ id: uid(), tid: tr.id, name: tr.name, wtName: wtName(tr.wt), start: isNaN(t) ? Date.now() : t, end: null, runs: [] });
+      sumId = null; db.ses.push({ id: uid(), tid: tr.id, name: tr.name, wtName: wtName(tr.wt), start: isNaN(t) ? Date.now() : t, end: null, runs: [] });
     },
-    finishSes: function () { if (!confirm('Finish this training?')) return false; var s = activeSes(); endRun(s); s.end = Date.now(); },
+    finishSes: function () { if (!confirm('Finish this training?')) return false; var s = activeSes(); endRun(s); s.end = Date.now(); if (isBM(s) && analyze(s).ex.length) { sumId = s.id; sumMode = 'trends'; needTop = true; } },
+    openSum: function (el) { sumId = el.getAttribute('data-id'); sumMode = 'overview'; needTop = true; },
+    sumTrends: function () { sumMode = 'trends'; needTop = true; },
+    sumOverview: function () { sumMode = 'overview'; needTop = true; },
+    closeSum: function () { sumId = null; needTop = true; },
     startRun: function (el) { var s = activeSes(), e = byId(db.ex, el.getAttribute('data-id')); endRun(s); s.runs.push({ id: uid(), eid: e.id, name: e.name, rest: e.rest, sides: !!e.sides, rounds: e.rounds || '', reps: e.reps || '', start: Date.now(), end: null, sets: [] }); },
     endRun: function () { endRun(activeSes()); },
     logSet: function () { return logIt(); },
@@ -387,7 +602,7 @@ svg{width:100%;height:auto;display:block}
     undoSet: function () { activeRun(activeSes()).sets.pop(); },
     addEx: function () {
       var n = $('nxName').value.replace(/^\s+|\s+$/g, ''), r = parseInt($('nxRest').value, 10);
-      if (!n) { alert('Enter a name.'); return false; } db.ex.push({ id: uid(), name: n, rest: isNaN(r) ? 90 : r, sides: $('nxSides').checked, rounds: $('nxRounds').value.replace(/^\s+|\s+$/g, ''), reps: $('nxReps').value.replace(/^\s+|\s+$/g, '') });
+      if (!n) { alert('Enter a name.'); return false; } db.ex.push({ id: uid(), name: n, rest: isNaN(r) ? 90 : r, sides: $('nxSides').checked, lower: $('nxLower').checked, rounds: $('nxRounds').value.replace(/^\s+|\s+$/g, ''), reps: $('nxReps').value.replace(/^\s+|\s+$/g, '') });
     },
     delEx: function (el) { if (!confirm('Delete this exercise type? Past logs stay.')) return false; var id = el.getAttribute('data-id'); db.ex = db.ex.filter(function (e) { return e.id !== id; }); },
     addTr: function () {
@@ -433,7 +648,7 @@ svg{width:100%;height:auto;display:block}
     if (A[el.getAttribute('data-a')](el) !== false) { save(); render(); }
   });
   document.addEventListener('change', function (e) {
-    var t = e.target, id = t.getAttribute && t.getAttribute('data-rest'), sd = t.getAttribute && t.getAttribute('data-sides');
+    var t = e.target, id = t.getAttribute && t.getAttribute('data-rest'), sd = t.getAttribute && t.getAttribute('data-sides'), lw = t.getAttribute && t.getAttribute('data-lower');
     if ((t.id === 'owType' || t.id === 'wuType') && t.value === '__new') {
       var nm = trim(prompt('Name of the new type') || '');
       if (nm) {
@@ -444,6 +659,7 @@ svg{width:100%;height:auto;display:block}
       render(); return;
     }
     if (sd) { var ex2 = byId(db.ex, sd); if (ex2) { ex2.sides = t.checked; save(); } return; }
+    if (lw) { var ex4 = byId(db.ex, lw); if (ex4) { ex4.lower = t.checked; save(); } return; }
     var rd = t.getAttribute && t.getAttribute('data-rounds'), rp = t.getAttribute && t.getAttribute('data-reps');
     if (rd || rp) { var ex3 = byId(db.ex, rd || rp); if (ex3) { ex3[rd ? 'rounds' : 'reps'] = t.value.replace(/^\s+|\s+$/g, ''); save(); } return; }
     if (id) { var ex = byId(db.ex, id), v = parseInt(t.value, 10); if (ex && !isNaN(v)) { ex.rest = v; save(); } return; }

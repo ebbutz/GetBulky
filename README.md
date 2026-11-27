@@ -15,7 +15,7 @@ Open `index.html` in a browser, or run `python3 -m http.server` in this folder.
 3. Open `https://<your-user>.github.io/<repo>/` on your phone, then Share > Add to Home Screen
 
 ## Data model
-- `ex`: exercise types `{id, name, rest, sides}` (rest = break in seconds, sides = track left and right separately, rounds and reps = recommended, as text like `3` and `8–12`)
+- `ex`: exercise types `{id, name, rest, sides}` (rest = break in seconds, sides = track left and right separately, lower = a lower weight is better (e.g. assisted pull-up), rounds and reps = recommended, as text like `3` and `8–12`)
 - `tr`: training types `{id, name, ex: [exerciseIds]}`
 - `wt`: workout types `{id, name}` (e.g. Build muscle, CrossFit); every training has a `wt`
 - `wu`: warm-up types `{id, name}`
@@ -27,3 +27,6 @@ For exercises with `sides`, `r` is reps on the right, `l` reps on the left, and 
 A session also has `wtName` (its workout type) and can have `warmups: [{id, wu, name, sec, km?}]` (`sec` = duration in seconds; older entries have `min`).
 
 The date of the last "Copy backup" is kept on the device only (`localStorage` key `gymlog.lastcopy`), not in the backup text.
+
+
+After finishing a Build muscle training the summary opens on the "Trends" tab; in Recent activity the "Overview" button opens it on the "Overview" tab. Both tabs are always one tap apart. Trends compare the last 3 trainings of each exercise, split into weight and volume. It is calculated from the stored sessions; nothing extra is saved.
