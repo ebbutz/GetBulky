@@ -52,6 +52,12 @@ button.full{width:100%;margin-top:10px}
 .tile .tb b{display:block}
 .tile>button{margin-left:8px;flex:none}
 details>summary{cursor:pointer}
+button:disabled{opacity:.45}
+.card.dirty{border:2px solid var(--warn)}
+.card.dirty textarea{border:2px solid var(--warn)}
+.bkst{font-size:14px;margin:8px 0;color:var(--mute)}
+.bkst.warn{color:var(--warn);font-weight:600}
+.bkok{color:var(--ok);font-weight:600;margin:8px 0}
 table{width:100%;border-collapse:collapse;font-size:14px}
 td,th{padding:6px 4px;border-top:1px solid var(--line);text-align:left;vertical-align:top}
 #tabs{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0)}
@@ -100,7 +106,7 @@ svg{width:100%;height:auto;display:block}
     }
     return null;
   }
-  var owSel = '', wuSel = '', actLimit = 3, sumId = null, sumMode = 'trends', needTop = false;
+  var owSel = '', wuSel = '', actLimit = 3, sumId = null, sumMode = 'trends', needTop = false, importMsg = '';
   function fix(d) {
     var i, j, f, bm = null;
     d.wu = d.wu || []; d.oth = d.oth || [];
@@ -547,17 +553,38 @@ svg{width:100%;height:auto;display:block}
       (wtName(db.tr[i].wt) ? esc(wtName(db.tr[i].wt)) + ' \u00b7 ' : '') + esc(db.tr[i].ex.map(function (id) { var e = byId(db.ex, id); return e ? e.name : '?'; }).join(', ')) + '</div></div><button class="del" data-a="delTr" data-id="' + db.tr[i].id + '">\u2715</button></div>';
     h += '<label>New training</label><input id="ntName" placeholder="Name"><label>Workout type</label>' + wtSelect('ntWt') + '<label>Exercises</label>';
     for (i = 0; i < db.ex.length; i++) h += '<label class="chk"><input type="checkbox" data-ntex="' + db.ex[i].id + '">' + esc(db.ex[i].name) + '</label>';
-    h += '<button class="full" data-a="addTr">Add training</button></div>' + wtSetup() + wuSetup() + '<h2>Backup</h2><div class="card"><div class="mute">Copy this text to keep a backup. Paste a backup here and tap Import to restore.</div>' +
-      '<textarea id="bk" rows="4">' + esc(JSON.stringify(db)) + '</textarea><button class="full" data-a="copy">Copy backup</button><div class="mute" style="margin-top:6px">Last copied: ' + lastCopyText() + '</div><button class="full sec" data-a="import">Import</button></div>';
+    h += '<button class="full" data-a="addTr">Add training</button></div>' + wtSetup() + wuSetup() + '<h2>Backup</h2><div class="card" id="bkCard"><div class="mute">Copy this text to keep a backup. To restore one, paste it into the box and tap Import.</div>' +
+      (importMsg ? '<div class="bkok" id="bkOk">✓ ' + esc(importMsg) + '</div>' : '') +
+      '<textarea id="bk" rows="4" style="margin-top:8px">' + esc(JSON.stringify(db)) + '</textarea>' +
+      '<div class="bkst" id="bkSt"></div>' +
+      '<button class="full" id="bkCopy" data-a="copy">Copy backup</button><div class="mute" id="bkLast" style="margin-top:6px">Last copied: ' + lastCopyText() + '</div>' +
+      '<button class="full" id="bkImp" data-a="import" disabled>Import</button>' +
+      '<button class="full sec" id="bkDis" data-a="discard" style="display:none">Discard changes</button></div>';
     return h;
   }
 
   /* ---------- render and timer ---------- */
+  function bkSync() {
+    var ta = $('bk'), card = $('bkCard'), d;
+    if (!ta || !card) return;
+    d = trim(ta.value) !== trim(JSON.stringify(db));
+    card.className = d ? 'card dirty' : 'card';
+    $('bkSt').className = d ? 'bkst warn' : 'bkst';
+    $('bkSt').textContent = d ? 'Text changed – not applied yet. Tap "Import" to load it into the app.' : '';
+    $('bkCopy').style.display = d ? 'none' : '';
+    $('bkLast').style.display = d ? 'none' : '';
+    $('bkDis').style.display = d ? '' : 'none';
+    $('bkImp').disabled = !d;
+    $('bkImp').className = d ? 'full' : 'full sec';
+    $('bkImp').textContent = d ? 'Import and replace all data' : 'Import';
+    if (d && $('bkOk')) $('bkOk').style.display = 'none';
+  }
   function render() {
     $('app').innerHTML = tab === 'train' ? (sumId && byId(db.ses, sumId) ? sumHtml(byId(db.ses, sumId)) : trainView()) : tab === 'progress' ? progressView() : setupView();
     var t = [['train', 'Train'], ['progress', 'Progress'], ['setup', 'Setup']], h = '';
     for (var i = 0; i < t.length; i++) h += '<button data-tab="' + t[i][0] + '"' + (tab === t[i][0] ? ' class="on"' : '') + '>' + t[i][1] + '</button>';
     $('tabs').innerHTML = h;
+    bkSync();
     if (needTop) { needTop = false; try { window.scrollTo(0, 0); } catch (e) {} }
     tick();
   }
@@ -637,16 +664,23 @@ svg{width:100%;height:auto;display:block}
     delWt: function (el) { if (!confirm('Delete this workout type? Past entries stay.')) return false; var id = el.getAttribute('data-id'); db.wt = db.wt.filter(function (x) { return x.id !== id; }); },
     delOther: function (el) { if (!confirm('Delete this workout?')) return false; var id = el.getAttribute('data-id'); db.oth = db.oth.filter(function (x) { return x.id !== id; }); },
     'import': function () {
-      try { var d = JSON.parse($('bk').value); if (!d.ex || !d.tr || !d.ses) throw 0; db = fix(d); } catch (e) { alert('That is not a valid backup.'); return false; }
-    }
+      var raw = $('bk').value.replace(/^﻿/, ''), d;
+      try { d = JSON.parse(raw); if (!d || !d.ex || !d.tr || !d.ses) throw 0; } catch (e) { alert('That text is not a valid backup. Copy the whole file, from the first { to the last }.'); return false; }
+      if (!confirm('Replace all data in the app with this backup?\n\n' + d.ses.length + ' trainings, ' + d.ex.length + ' exercises.')) return false;
+      db = fix(d);
+      importMsg = 'Imported ' + db.ses.length + ' trainings, ' + db.ex.length + ' exercises and ' + db.oth.length + ' other workouts.';
+    },
+    discard: function () { importMsg = ''; return true; }
   };
   document.addEventListener('click', function (e) {
     var el = e.target;
     while (el && el !== document && !el.getAttribute('data-a') && !el.getAttribute('data-tab')) el = el.parentNode;
     if (!el || el === document) return;
-    if (el.getAttribute('data-tab')) { tab = el.getAttribute('data-tab'); render(); return; }
+    if (el.getAttribute('data-tab')) { tab = el.getAttribute('data-tab'); importMsg = ''; render(); return; }
     if (A[el.getAttribute('data-a')](el) !== false) { save(); render(); }
   });
+  document.addEventListener('input', function (e) { if (e.target && e.target.id === 'bk') bkSync(); });
+  document.addEventListener('change', function (e) { if (e.target && e.target.id === 'bk') bkSync(); });
   document.addEventListener('change', function (e) {
     var t = e.target, id = t.getAttribute && t.getAttribute('data-rest'), sd = t.getAttribute && t.getAttribute('data-sides'), lw = t.getAttribute && t.getAttribute('data-lower');
     if ((t.id === 'owType' || t.id === 'wuType') && t.value === '__new') {
