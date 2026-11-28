@@ -55,6 +55,7 @@ button.full{width:100%;margin-top:10px}
 .tile>button{margin-left:8px;flex:none}
 details>summary{cursor:pointer}
 button:active{opacity:.8;transform:scale(.98)}
+.hello{margin:6px 0 16px;text-align:center}.hello h1{margin:0 0 6px;font-size:28px;line-height:1.15;color:var(--acc)}.hello .last{margin-top:10px}
 .bd{display:block;width:100%;max-width:300px;margin:6px auto 2px}
 .bd .sil{fill:var(--bg);stroke:var(--line);stroke-width:1.5}
 .bd .m{fill:var(--line);fill-opacity:.55}
@@ -289,14 +290,46 @@ svg{width:100%;height:auto;display:block}
       '<div><label>Distance (km)</label><input id="wuKm" type="text" inputmode="decimal" autocomplete="off" placeholder="optional"></div></div>' +
       '<button class="full sec" data-a="addWarm">Add warm-up</button></div>';
   }
-  function otherHtml() {
-    var used = {}, avail = [], i;
-    for (i = 0; i < db.tr.length; i++) if (db.tr[i].wt) used[db.tr[i].wt] = 1;
-    for (i = 0; i < db.wt.length; i++) if (!used[db.wt[i].id]) avail.push(db.wt[i]);
-    return '<h2>Other workouts</h2><div class="card"><label>Workout type</label>' + typeSel('owType', avail, owSel) +
-      '<label>Date and time</label><input type="datetime-local" id="owStart" value="' + inputTime(Date.now()) + '">' +
-      '<label>Duration (min, optional)</label><input id="owMin" type="number" inputmode="numeric">' +
-      '<button class="full" data-a="addOther">Save workout</button></div>';
+  function agoText(t) {
+    var a = new Date(t), n = new Date(), d, h;
+    d = Math.round((new Date(n.getFullYear(), n.getMonth(), n.getDate()) - new Date(a.getFullYear(), a.getMonth(), a.getDate())) / 86400000);
+    if (d <= 0) { h = Math.floor((n.getTime() - t) / 3600000); return h < 1 ? 'less than an hour ago' : h + (h === 1 ? ' hour ago' : ' hours ago'); }
+    return d === 1 ? 'yesterday' : d + ' days ago';
+  }
+  function lastHtml() {
+    var best = null, bt = 0, i, x, what, n, names;
+    for (i = 0; i < db.ses.length; i++) if (db.ses[i].end && db.ses[i].start > bt) { best = { s: db.ses[i] }; bt = db.ses[i].start; }
+    for (i = 0; i < db.oth.length; i++) if (db.oth[i].start > bt) { best = { o: db.oth[i] }; bt = db.oth[i].start; }
+    if (!best) return '';
+    if (best.s) {
+      x = best.s; names = {}; n = 0;
+      for (i = 0; i < x.runs.length; i++) if (x.runs[i].sets.length && !names[x.runs[i].eid]) { names[x.runs[i].eid] = 1; n++; }
+      what = x.name + (x.wtName ? ' (' + x.wtName + ')' : '') + (n ? ' · ' + n + (n === 1 ? ' exercise' : ' exercises') : '');
+    } else {
+      x = best.o; what = x.name + (x.km ? ' · ' + x.km + ' km' : '') + (x.min ? ' · ' + x.min + ' min' : '');
+    }
+    return '<div class="last mute">Your last workout was ' + agoText(bt) + ':<br><b style="color:var(--ink)">' + esc(what) + '</b></div>';
+  }
+  function startHtml() {
+    var h = '<div class="hello"><h1>It’s a new day.</h1><div class="mute">What do you want to do today?</div>' + lastHtml() + '</div>' +
+      '<div class="card"><label>Workout type</label>' + typeSel('owType', db.wt, owSel), ty = byId(db.wt, owSel), trs = [], i;
+    if (ty) {
+      for (i = 0; i < db.tr.length; i++) if (db.tr[i].wt === ty.id) trs.push(db.tr[i]);
+      if (trs.length) {
+        h += '<label>Training</label><select id="trSel">';
+        for (i = 0; i < trs.length; i++) h += '<option value="' + trs[i].id + '">' + esc(trs[i].name) + '</option>';
+        h += '</select><label>Start date and time</label><input type="datetime-local" id="trStart" value="' + inputTime(Date.now()) + '">' +
+          '<button class="full" data-a="startSes">Start training</button>';
+      } else if (/^\s*build muscle\s*$/i.test(ty.name)) {
+        h += '<div class="mute" style="margin-top:12px">No trainings for this type yet. Add one under Setup first.</div>';
+      } else {
+        h += '<label>Date and time</label><input type="datetime-local" id="owStart" value="' + inputTime(Date.now()) + '">' +
+          '<div class="two"><div><label>Duration (min, optional)</label><input id="owMin" type="number" inputmode="numeric"></div>' +
+          '<div><label>Distance (km, optional)</label><input id="owKm" type="text" inputmode="decimal" autocomplete="off"></div></div>' +
+          '<button class="full" data-a="addOther">Save workout</button>';
+      }
+    }
+    return h + '</div>';
   }
   function actHtml() {
     var items = [], i, n, cap, x, h;
@@ -315,7 +348,7 @@ svg{width:100%;height:auto;display:block}
           (isBM(x) ? '<button class="sec" data-a="openSum" data-id="' + x.id + '">Overview</button>' : '') + '</div>';
       } else {
         x = items[i].o;
-        h += '<div class="card row"><div><b>' + esc(x.name) + '</b><div class="mute">' + fmtDate(x.start) + (x.min ? ' \u00b7 ' + x.min + ' min' : '') + '</div></div>' +
+        h += '<div class="card row"><div><b>' + esc(x.name) + '</b><div class="mute">' + fmtDate(x.start) + (x.km ? ' \u00b7 ' + x.km + ' km' : '') + (x.min ? ' \u00b7 ' + x.min + ' min' : '') + '</div></div>' +
           '<button class="del" data-a="delOther" data-id="' + x.id + '">\u2715</button></div>';
       }
     }
@@ -594,16 +627,8 @@ svg{width:100%;height:auto;display:block}
 
   /* ---------- views ---------- */
   function trainView() {
-    var s = activeSes(), h = s ? '' : '<h1>Train</h1>', i;
-    if (!s) {
-      if (!db.tr.length) return h + '<div class="card">Add a training type under Setup first.</div>';
-      h += '<div class="card"><label>Training</label><select id="trSel">';
-      for (i = 0; i < db.tr.length; i++) h += '<option value="' + db.tr[i].id + '">' + esc(db.tr[i].name) + '</option>';
-      h += '</select><label>Start date and time</label><input type="datetime-local" id="trStart" value="' + inputTime(Date.now()) + '">' +
-        '<button class="full" data-a="startSes">Start training</button></div>';
-      h += otherHtml() + actHtml();
-      return h;
-    }
+    var s = activeSes(), h = '', i;
+    if (!s) return startHtml() + actHtml();
     var run = activeRun(s);
     if (run) {
       var pr = lastRun(run.eid, s), prev = pr ? pr.sets : null, n = run.sets.length, last = n ? run.sets[n - 1] : (prev ? prev[0] : { w: '', r: '' });
@@ -761,7 +786,7 @@ svg{width:100%;height:auto;display:block}
   var A = {
     startSes: function () {
       var tr = byId(db.tr, $('trSel').value), v = $('trStart').value, t = v ? new Date(v).getTime() : Date.now();
-      sumId = null; db.ses.push({ id: uid(), tid: tr.id, name: tr.name, wtName: wtName(tr.wt), start: isNaN(t) ? Date.now() : t, end: null, runs: [] });
+      owSel = ''; sumId = null; db.ses.push({ id: uid(), tid: tr.id, name: tr.name, wtName: wtName(tr.wt), start: isNaN(t) ? Date.now() : t, end: null, runs: [] });
     },
     finishSes: function () { if (!confirm('Finish this training?')) return false; var s = activeSes(); endRun(s); s.end = Date.now(); if (isBM(s) && analyze(s).ex.length) { sumId = s.id; sumMode = 'trends'; needTop = true; } },
     openSum: function (el) { sumId = el.getAttribute('data-id'); sumMode = 'overview'; needTop = true; },
@@ -825,10 +850,12 @@ svg{width:100%;height:auto;display:block}
     delWarm: function (el) { var s = activeSes(), id = el.getAttribute('data-id'); s.warmups = (s.warmups || []).filter(function (x) { return x.id !== id; }); },
     delWu: function (el) { var id = el.getAttribute('data-id'); db.wu = db.wu.filter(function (x) { return x.id !== id; }); },
     addOther: function () {
-      var ty = byId(db.wt, $('owType').value), v = $('owStart').value, t = v ? new Date(v).getTime() : NaN, raw = trim($('owMin').value), m = raw === '' ? null : parseFloat(raw);
+      var ty = byId(db.wt, $('owType').value), v = $('owStart').value, t = v ? new Date(v).getTime() : NaN, raw = trim($('owMin').value), m = raw === '' ? null : parseFloat(raw), kraw = trim($('owKm').value), km = kraw === '' ? null : num(kraw);
       if (!ty || isNaN(t)) { alert('Select a workout type and enter a date and time.'); return false; }
       if (m !== null && (isNaN(m) || m <= 0)) { alert('The duration is optional, but if you enter one it must be above 0.'); return false; }
-      db.oth.push({ id: uid(), wt: ty.id, name: ty.name, start: t, min: m }); owSel = ty.id;
+      if (km !== null && (isNaN(km) || km <= 0)) { alert('The distance is optional, but if you enter one it must be above 0.'); return false; }
+      var o = { id: uid(), wt: ty.id, name: ty.name, start: t, min: m }; if (km !== null) o.km = km;
+      db.oth.push(o); owSel = '';
     },
     moreAct: function () { actLimit = Math.min(10, actLimit + 3); },
     lessAct: function () { actLimit = 3; },
@@ -865,6 +892,7 @@ svg{width:100%;height:auto;display:block}
       }
       render(); return;
     }
+    if (t.id === 'owType') { owSel = t.value; render(); return; }
     if (sd) { var ex2 = byId(db.ex, sd); if (ex2) { ex2.sides = t.checked; save(); } return; }
     if (lw) { var ex4 = byId(db.ex, lw); if (ex4) { ex4.lower = t.checked; save(); } return; }
     var rd = t.getAttribute && t.getAttribute('data-rounds'), rp = t.getAttribute && t.getAttribute('data-reps');
