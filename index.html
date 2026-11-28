@@ -55,7 +55,7 @@ button.full{width:100%;margin-top:10px}
 .tile>button{margin-left:8px;flex:none}
 details>summary{cursor:pointer}
 button:active{opacity:.8;transform:scale(.98)}
-.hello{margin:6px 0 14px}.hello h1{margin:0 0 6px;font-size:28px;line-height:1.15}
+.hello{margin:6px 0 16px;text-align:center}.hello h1{margin:0 0 6px;font-size:28px;line-height:1.15;color:var(--acc)}.hello .last{margin-top:10px}
 .bd{display:block;width:100%;max-width:300px;margin:6px auto 2px}
 .bd .sil{fill:var(--bg);stroke:var(--line);stroke-width:1.5}
 .bd .m{fill:var(--line);fill-opacity:.55}
@@ -290,8 +290,28 @@ svg{width:100%;height:auto;display:block}
       '<div><label>Distance (km)</label><input id="wuKm" type="text" inputmode="decimal" autocomplete="off" placeholder="optional"></div></div>' +
       '<button class="full sec" data-a="addWarm">Add warm-up</button></div>';
   }
+  function agoText(t) {
+    var a = new Date(t), n = new Date(), d, h;
+    d = Math.round((new Date(n.getFullYear(), n.getMonth(), n.getDate()) - new Date(a.getFullYear(), a.getMonth(), a.getDate())) / 86400000);
+    if (d <= 0) { h = Math.floor((n.getTime() - t) / 3600000); return h < 1 ? 'less than an hour ago' : h + (h === 1 ? ' hour ago' : ' hours ago'); }
+    return d === 1 ? 'yesterday' : d + ' days ago';
+  }
+  function lastHtml() {
+    var best = null, bt = 0, i, x, what, n, names;
+    for (i = 0; i < db.ses.length; i++) if (db.ses[i].end && db.ses[i].start > bt) { best = { s: db.ses[i] }; bt = db.ses[i].start; }
+    for (i = 0; i < db.oth.length; i++) if (db.oth[i].start > bt) { best = { o: db.oth[i] }; bt = db.oth[i].start; }
+    if (!best) return '';
+    if (best.s) {
+      x = best.s; names = {}; n = 0;
+      for (i = 0; i < x.runs.length; i++) if (x.runs[i].sets.length && !names[x.runs[i].eid]) { names[x.runs[i].eid] = 1; n++; }
+      what = x.name + (x.wtName ? ' (' + x.wtName + ')' : '') + (n ? ' · ' + n + (n === 1 ? ' exercise' : ' exercises') : '');
+    } else {
+      x = best.o; what = x.name + (x.km ? ' · ' + x.km + ' km' : '') + (x.min ? ' · ' + x.min + ' min' : '');
+    }
+    return '<div class="last mute">Your last workout was ' + agoText(bt) + ':<br><b style="color:var(--ink)">' + esc(what) + '</b></div>';
+  }
   function startHtml() {
-    var h = '<div class="hello"><h1>It’s a new day.<br>Let’s get busy.</h1><div class="mute">What do you want to do today?</div></div>' +
+    var h = '<div class="hello"><h1>It’s a new day.</h1><div class="mute">What do you want to do today?</div>' + lastHtml() + '</div>' +
       '<div class="card"><label>Workout type</label>' + typeSel('owType', db.wt, owSel), ty = byId(db.wt, owSel), trs = [], i;
     if (ty) {
       for (i = 0; i < db.tr.length; i++) if (db.tr[i].wt === ty.id) trs.push(db.tr[i]);
